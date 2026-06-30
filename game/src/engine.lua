@@ -598,15 +598,32 @@ function Engine:enterDying(target, source)
     end
 end
 
--- Cards a player can use as 画饼 right now (hand peaches + treasure 猎头 conversions + skill view-as).
+-- Cards a player can use as 画饼 right now (hand peaches + skill view-as +, once per
+-- turn, ANY hand card via the 猎头联系方式 treasure).
 function Engine:peachOptions(player)
-    return self:handCardsAs(player, "peach")
+    local opts = self:handCardsAs(player, "peach")
+    if player.equip.treasure and player.equip.treasure.name == "猎头联系方式"
+        and not player.used.headhunter then
+        local seen = {}
+        for _, c in ipairs(opts) do seen[c.id] = true end
+        for _, c in ipairs(player.hand) do
+            if not seen[c.id] then opts[#opts + 1] = c end   -- treasure: any card → 画饼
+        end
+    end
+    return opts
 end
 
 function Engine:usePeachCard(player, card, target)
+    -- if the card isn't already a 画饼 (native or skill view-as) it's the 猎头联系方式
+    -- once-per-turn conversion — spend that budget.
+    local viaTreasure = not self:cardActsAs(player, card, "peach")
     self:removeFromHand(player, card)
     self:toDiscard(card)
     player.stats.pie = player.stats.pie + 1
+    if viaTreasure then
+        player.used.headhunter = true
+        self:logmsg("%s 用【猎头联系方式】将 %s 当作【画饼】", player.name, cards.label(card))
+    end
     local asName = (card.subtype == "peach") and "画饼" or (card.name .. "→画饼")
     self:logmsg("%s 使用 %s 为 %s 回复精神值", player.name, asName, target.name)
     -- 救援/濒死时使用【画饼】也是「使用牌」：触发 onPlayCard（如 新媒体 十万加）。

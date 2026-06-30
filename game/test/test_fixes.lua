@@ -447,5 +447,23 @@ do
     g.askYesNo = realYes
 end
 
+----------------------------------------------------------------------
+print("[18] 猎头联系方式 treasure: ANY hand card usable as 画饼, once per turn")
+do
+    local g = newGame(4, 31)
+    local p = withChar(g, 1, 2)               -- 张需求: no peach-conversion skill
+    p.used = {}
+    p.equip.treasure = mkCard("猎头联系方式")
+    p.hand = { mkCard("加班", "spade", 2) }    -- no native 画饼
+    local opts = g:peachOptions(p)
+    check("treasure exposes a non-peach as 画饼", #opts == 1 and opts[1].name == "加班", "n=" .. #opts)
+    p.maxHp = 3; p.hp = 1
+    g:usePeachCard(p, p.hand[1], p)
+    check("treasure 画饼 heals", p.hp == 2, "hp=" .. p.hp)
+    check("treasure budget consumed", p.used.headhunter == true)
+    p.hand = { mkCard("摸鱼", "spade", 2) }    -- spade 摸鱼 is not a 画饼
+    check("treasure is once-per-turn", #g:peachOptions(p) == 0, "n2=" .. #g:peachOptions(p))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
