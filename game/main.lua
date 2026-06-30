@@ -41,12 +41,21 @@ end
 -- forward declarations (defined in the input section, referenced by layout/drawHand)
 local commitPlay, tryPlayCard, cardActionable
 
+-- screenshot mode: `love . --shot` renders a representative frame to the save
+-- dir then quits. Used to verify real rendering without manual interaction.
+local SHOT = false
+for _, a in ipairs(_G.arg or {}) do if a == "--shot" then SHOT = true end end
+if os.getenv("ZHS_SHOT") then SHOT = true end
+
 local function newGame(n)
     G.numPlayers = n or G.numPlayers
+    -- SHOT mode uses a fixed seed so screenshots are reproducible frame-to-frame.
+    local seed = os.time() % 2000000000
+    if SHOT then seed = tonumber(os.getenv("ZHS_SHOT_SEED")) or 42 end
     G.game = Engine.new({
         numPlayers = G.numPlayers,
         humanSeat = 1,
-        seed = os.time() % 2000000000,
+        seed = seed,
         characters = Chars.list,
     })
     G.game:start()
@@ -67,11 +76,6 @@ local function isHumanDecision()
     return G.req ~= nil and G.req.player and G.req.player.isHuman
 end
 
--- screenshot mode: `love . --shot` renders a representative frame to the save
--- dir then quits. Used to verify real rendering without manual interaction.
-local SHOT = false
-for _, a in ipairs(_G.arg or {}) do if a == "--shot" then SHOT = true end end
-if os.getenv("ZHS_SHOT") then SHOT = true end
 local shotFrame, shotDone = 0, false
 
 function love.load()
@@ -79,6 +83,11 @@ function love.load()
     love.graphics.setBackgroundColor(theme.colors.bg)
     love.keyboard.setKeyRepeat(true)
     newGame(6)
+    -- screenshot helper: pin the cursor so hover-driven UI (tooltips) renders for capture
+    if SHOT then
+        local fx, fy = tonumber(os.getenv("ZHS_SHOT_MX")), tonumber(os.getenv("ZHS_SHOT_MY"))
+        if fx and fy then love.mouse.getPosition = function() return fx, fy end end
+    end
 end
 
 function love.update(dt)
@@ -524,6 +533,99 @@ local function drawHelp()
     end
 end
 
+-- Draw a multi-line tooltip box near (mx,my), clamped to the play area.
+-- lines: list of { text, color, font }.
+local function drawTooltip(lines, mx, my)
+    local boxW = 286
+    local pad = 10
+    local innerW = boxW - pad * 2
+    -- measure
+    local totalH = pad * 2
+    local heights = {}
+    for _, ln in ipairs(lines) do
+        local font = ln.font or theme.fonts.small
+        local _, wrapped = font:getWrap(ln.text, innerW)
+        local h = math.max(1, #wrapped) * (font:getHeight() + 2)
+        heights[#heights + 1] = h
+        totalH = totalH + h
+    end
+    -- position: prefer to the right of the cursor, flip/clamp to stay on-screen
+    local x = mx + 18
+    if x + boxW > G.L.playW - 6 then x = mx - boxW - 18 end
+    if x < 6 then x = 6 end
+    local y = my + 8
+    if y + totalH > G.L.h - 6 then y = G.L.h - totalH - 6 end
+    if y < 6 then y = 6 end
+
+    theme.setColor({ 0.05, 0.06, 0.09 }, 0.96)
+    theme.rrect("fill", x, y, boxW, totalH, 8)
+    theme.setColor(theme.colors.accent, 0.7)
+    love.graphics.setLineWidth(1.5)
+    theme.rrect("line", x, y, boxW, totalH, 8)
+    love.graphics.setLineWidth(1)
+
+    local yy = y + pad
+    for i, ln in ipairs(lines) do
+        theme.printf(ln.text, ln.font or theme.fonts.small, ln.color or theme.colors.text,
+            x + pad, yy, innerW, "left")
+        yy = yy + heights[i]
+    end
+end
+
+-- Build + draw the hover tooltip for whatever the cursor is over (card or player).
+local function drawHoverTooltip()
+    if G.help or G.req == nil then return end
+    local mx, my = love.mouse.getPosition()
+    if mx >= G.L.playW then return end   -- over the log panel
+
+    -- 1) a hand card → show what it does
+    local me = humanPlayer()
+    for _, c in ipairs(me.hand) do
+        local r = G.handRects[c.id]
+        if r and theme.pointIn(mx, my, r) then
+            local proto = cards.PROTO[c.name]
+            local typeCN = c.type == "basic" and "基本牌" or (c.type == "trick" and "锦囊牌" or "装备牌")
+            local head = string.format("%s  %s%s · %s", c.name,
+                cards.SUIT_CN[c.suit], cards.rankStr(c), typeCN)
+            local lines = { { text = head, color = theme.colors.accent, font = theme.fonts.normal } }
+            if proto and proto.desc then
+                lines[#lines + 1] = { text = proto.desc, color = theme.colors.text }
+            end
+            if proto and proto.range then
+                lines[#lines + 1] = { text = "攻击范围 " .. proto.range, color = theme.colors.textDim }
+            end
+            -- conversions available to this character
+            local convs = G.game:convertOptions(me, c)
+            if #convs > 0 then
+                lines[#lines + 1] = { text = "可当作：" .. table.concat(convs, "、"),
+                    color = theme.colors.cardEquip, font = theme.fonts.small }
+            end
+            drawTooltip(lines, mx, my)
+            return
+        end
+    end
+
+    -- 2) a player panel → show their character & skills
+    for _, p in ipairs(G.game.players) do
+        local r = G.playerRects[p.id]
+        if r and theme.pointIn(mx, my, r) then
+            local lines = {
+                { text = string.format("%s · %s    精神值 %d", p.char.title, p.char.name, p.maxHp),
+                  color = theme.colors.accent, font = theme.fonts.normal },
+            }
+            local idk = knownIdentity(p)
+            if idk then
+                lines[#lines + 1] = { text = "身份：" .. theme.identityCN[idk],
+                    color = theme.identityColor(idk), font = theme.fonts.small }
+            end
+            if p.char.s1 then lines[#lines + 1] = { text = p.char.s1, color = theme.colors.text } end
+            if p.char.s2 then lines[#lines + 1] = { text = p.char.s2, color = theme.colors.text } end
+            drawTooltip(lines, mx, my)
+            return
+        end
+    end
+end
+
 function love.draw()
     if not G.game then return end
     layout()
@@ -549,11 +651,12 @@ function love.draw()
             G.L.playW / 2 - 160, G.L.h * 0.5 + 10, 320, "center")
     end
 
+    drawHoverTooltip()
     drawGameOver()
     drawHelp()
 
     -- hint bottom-left
-    theme.print("H 帮助", theme.fonts.tiny, theme.colors.textDim, 8, G.L.h - 16)
+    theme.print("H 帮助 · 悬停查看牌/角色", theme.fonts.tiny, theme.colors.textDim, 8, G.L.h - 16)
 end
 
 ----------------------------------------------------------------------
