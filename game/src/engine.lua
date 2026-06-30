@@ -87,9 +87,21 @@ function Engine:setup(opts)
         -- 主公 convention: the boss is outnumbered, so grant a max-HP bonus that
         -- scales gently with table size (more rebels ⇒ bigger cushion). This keeps
         -- a random-character boss survivable without changing their skills.
-        local bossBonus = 0
+        local bossBonus, bossDrawBonus = 0, 0
         if ids[seat] == "boss" then
-            bossBonus = (cfg.rebel >= 3) and 2 or 1
+            -- More rebels ⇒ a wider numbers gap for the lone boss, so the HP cushion
+            -- tracks the rebel count (4p:+0, 5p:+1, 6p/7p:+2, 8p:+3).
+            bossBonus = math.max(0, cfg.rebel - 1)
+            -- The deeply out-numbered configs (deficit = enemies − allies ≥ 2, i.e. the
+            -- single-loyalist 6p and the 8p table) get a 主公技 extra draw each turn.
+            -- HP alone just makes those games grind; card advantage is what lets the
+            -- boss team actually win them. A per-turn draw is a big swing, so the
+            -- milder single-loyalist deficit-1 table (5p) gets +1 HP instead.
+            local deficit = (cfg.rebel + cfg.spy) - (1 + cfg.loyal)
+            bossDrawBonus = (deficit >= 2) and 1 or 0
+            if deficit == 1 and cfg.loyal == 1 then bossBonus = bossBonus + 1 end
+            local override = tonumber(os.getenv("ZHS_BOSS_BONUS"))
+            if override then bossBonus = override end
         end
         local p = {
             id = seat,
@@ -100,6 +112,7 @@ function Engine:setup(opts)
             identity = ids[seat],
             maxHp = char.maxHp + bossBonus,
             hp = char.maxHp + bossBonus,
+            bossDrawBonus = bossDrawBonus,
             hand = {},
             equip = { weapon = nil, armor = nil, plusHorse = nil, minusHorse = nil, treasure = nil },
             delayed = {},          -- delayed trick cards placed in front (e.g. 试用期考核)
@@ -1164,6 +1177,12 @@ function Engine:runTurn(player)
         local base = 2
         local mod = self:trig(player, "drawNumMod", base)
         local n = mod or base
+        -- 主公技「老板光环」: in the most out-numbered configs the boss draws extra
+        -- cards each turn (see setup). More cards = more dodges, attacks and peaches.
+        if type(n) == "number" and (player.bossDrawBonus or 0) > 0
+            and not os.getenv("ZHS_NO_BOSS_DRAW") then
+            n = n + player.bossDrawBonus
+        end
         if n == "skip" then
             self:logmsg("%s 跳过摸牌阶段（技能）", player.name)
         else
