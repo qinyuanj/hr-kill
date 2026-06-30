@@ -200,7 +200,13 @@ C.list = {
         s2 = "服务挂了：进入濒死状态时，可令全场各弃1张牌。",
         skills = {
             onDying = function(game, p, source)
-                if #p.hand >= 0 and game:askYesNo(p, "【服务挂了】令全场各弃1张牌？") then
+                -- 服务挂了 makes EVERYONE discard 1 — a symmetric effect, so it favors the
+                -- out-numbered side. The boss team is the minority, so an AI boss/嫡系 wants
+                -- it; rebels (the majority) and the spy decline rather than help opponents.
+                -- (No identity-peeking: the choice keys only off p's own identity. Humans
+                -- decide interactively.)
+                local aiWant = (p.identity == "boss" or p.identity == "loyal")
+                if game:askYesNo(p, "【服务挂了】令全场各弃1张牌？", aiWant) then
                     for _, q in ipairs(game:aliveSeatsInOrder()) do
                         if #q.hand > 0 then
                             local c = q.isHuman and game:askCard(q, q.hand, "【服务挂了】弃1张", false)

@@ -230,5 +230,84 @@ do
         "before=" .. before .. " after=" .. totalCards(g))
 end
 
+----------------------------------------------------------------------
+print("[9] 人体工学椅 armor follows the damage substitute (背锅 redirect), not original")
+do
+    local g = newGame(4, 13)
+    for _, p in ipairs(g.players) do
+        p.char = { id = 0, title = "测试", name = "桩", maxHp = 5, skills = {} }
+        p.maxHp = 5; p.hp = 5; p.hand = {}
+    end
+    local atk, orig, sub = g.players[1], g.players[2], g.players[3]
+    orig.isHuman = true                      -- 背锅 redirect path is human-only
+    orig.hand = { mkCard("背锅") }
+    sub.equip.armor = mkCard("人体工学椅")    -- only the SUBSTITUTE wears armor
+    g.current = atk
+    g:resetReactiveBudgets(atk)
+    -- force the 背锅 decision: yes, transfer the hit to `sub`
+    local realYes, realTgt = g.askYesNo, g.askTarget
+    g.askYesNo = function() return true end
+    g.askTarget = function() return sub end
+    g:performAttack(atk, orig, { card = mkCard("加班"), amount = 1, dodgeable = false })
+    g.askYesNo, g.askTarget = realYes, realTgt
+    check("redirected-away original takes no damage", orig.hp == 5, "hp=" .. orig.hp)
+    -- under the old (pre-fix) ordering the substitute took the full 1 (its armor was skipped)
+    check("substitute's OWN armor reduces the redirected 加班 to 0", sub.hp == 5, "hp=" .. sub.hp)
+    check("substitute's armor flag consumed (it took the hit)", sub.armorUsedThisTurn == true)
+    check("original's armor flag NOT consumed (it never took the hit)", orig.armorUsedThisTurn == false)
+end
+
+----------------------------------------------------------------------
+print("[10] 刘重启 服务挂了: AI triggers for out-numbered boss-team, declines for rebel")
+do
+    local AI = require("src.ai")
+    local function run(identity)
+        local g = newGame(5, 17)
+        local liu = withChar(g, 6, 1)           -- 刘重启
+        liu.identity = identity
+        for _, p in ipairs(g.players) do p.hand = { mkCard("加班"), mkCard("摸鱼") } end
+        -- onDying ask()s via coroutine.yield; drive it with the AI answerer (which
+        -- returns req.aiChoice, i.e. the aiWant default our fix passes to askYesNo).
+        local co = coroutine.create(function() liu.char.skills.onDying(g, liu, nil) end)
+        local ans = nil
+        while true do
+            local ok, req = coroutine.resume(co, ans)
+            assert(ok, tostring(req))
+            if coroutine.status(co) == "dead" then break end
+            ans = AI.answer(g, req)
+        end
+        local others = 0
+        for i = 2, 5 do if #g.players[i].hand == 1 then others = others + 1 end end
+        return others                            -- how many non-casters lost a card
+    end
+    check("loyal 刘重启 triggers it (all 4 others each discard 1)", run("loyal") == 4)
+    check("rebel 刘重启 declines it (no one discards)", run("rebel") == 0)
+end
+
+----------------------------------------------------------------------
+print("[11] 新媒体 十万加 fires on a 摸鱼 dodge and a rescue 画饼 (red cards)")
+do
+    local g = newGame(4, 23)
+    local mei = withChar(g, 14, 2)              -- 新媒体 何爆款
+    local atk = g.players[1]
+    -- dodge path: 何爆款 dodges an 加班 with a RED 摸鱼 -> 十万加 展示红牌摸1
+    mei.flags = {}
+    mei.hand = { mkCard("摸鱼", "heart", 5) }
+    g.current = atk
+    local realAsk = g.askCard
+    g.askCard = function(self, p, cands) return cands[1] end   -- force the dodge
+    g:performAttack(atk, mei, { card = mkCard("加班"), amount = 1, dodgeable = true })
+    g.askCard = realAsk
+    check("十万加 fired on a red 摸鱼 dodge", mei.flags._viralCount == 1,
+        "viral=" .. tostring(mei.flags._viralCount))
+
+    -- rescue-peach path: using a RED 画饼 to heal also triggers 十万加
+    mei.flags = {}
+    local ally = g.players[3]; ally.maxHp = 4; ally.hp = 1
+    g:usePeachCard(mei, mkCard("画饼", "heart", 3), ally)
+    check("十万加 fired on a red rescue 画饼", mei.flags._viralCount == 1,
+        "viral=" .. tostring(mei.flags._viralCount))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

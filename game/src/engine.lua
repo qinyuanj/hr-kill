@@ -454,6 +454,15 @@ function Engine:dealDamage(ctx)
     self:maybeSubstituteDamage(ctx)
 
     local target = ctx.target
+    -- armor: 人体工学椅 once per turn -1, only against real 加班 card damage (ctx.card is
+    -- nil for PUA/毕业优化/skill hits). Applied here, after redirection, against the
+    -- player who takes the hit — and only that player's per-turn flag is consumed.
+    if ctx.card and not ctx.ignoreArmor and target.equip.armor and target.equip.armor.name == "人体工学椅"
+        and not target.armorUsedThisTurn and (ctx.amount or 0) > 0 then
+        target.armorUsedThisTurn = true
+        ctx.amount = ctx.amount - 1
+        self:logmsg("%s 的【人体工学椅】减免 1 点伤害", target.name)
+    end
     local amount = math.max(0, ctx.amount or 1)
     if amount == 0 or not target.alive then return end
     target.hp = target.hp - amount
@@ -579,6 +588,8 @@ function Engine:usePeachCard(player, card, target)
     player.stats.pie = player.stats.pie + 1
     local asName = (card.subtype == "peach") and "画饼" or (card.name .. "→画饼")
     self:logmsg("%s 使用 %s 为 %s 回复精神值", player.name, asName, target.name)
+    -- 救援/濒死时使用【画饼】也是「使用牌」：触发 onPlayCard（如 新媒体 十万加）。
+    self:trig(player, "onPlayCard", card)
     self:heal(target, 1, "画饼")
 end
 
@@ -675,6 +686,8 @@ function Engine:tryDodge(target, ctx)
     self:toDiscard(c)
     local asName = (c.subtype == "dodge") and "摸鱼" or (c.name .. "→摸鱼")
     self:logmsg("%s 打出 %s 抵消", target.name, asName)
+    -- 打出【摸鱼】也是「打出牌」：触发 onPlayCard（如 新媒体 十万加 展示红牌摸1）。
+    self:trig(target, "onPlayCard", c)
     return true
 end
 
@@ -721,14 +734,8 @@ function Engine:performAttack(source, target, opts)
         return false
     end
 
-    -- armor: 人体工学椅 once per turn -1 (only against real 加班 card damage, not PUA/毕业优化)
-    if ctx.card and not ctx.ignoreArmor and target.equip.armor and target.equip.armor.name == "人体工学椅"
-        and not target.armorUsedThisTurn and ctx.amount > 0 then
-        target.armorUsedThisTurn = true
-        ctx.amount = ctx.amount - 1
-        self:logmsg("%s 的【人体工学椅】减免 1 点伤害", target.name)
-    end
-
+    -- 人体工学椅 armor (-1) is applied inside dealDamage, AFTER 背锅/背锅侠 redirection,
+    -- so the reduction follows whoever actually takes the hit (not the original target).
     self:dealDamage(ctx)
 
     -- weapon on-hit effects (only for a real 加班 card and if target still alive)
