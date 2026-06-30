@@ -616,6 +616,13 @@ function Engine:killPlayer(target, source)
     target.revealed = true
     self:logmsg("☠ %s【%s · %s·%s】阵亡！", target.name, self.IDENTITY_CN[target.identity],
         target.char.title, target.char.name)
+    local epitaph = ({
+        boss  = "公司就此关张，大厦倾颓 🏚",
+        loyal = "尽忠到最后一刻，奈何大势已去 🥀",
+        rebel = "摸鱼一时爽，被优化火葬场 🔥",
+        spy   = "反骨仔的算盘，终究落了空 🧮",
+    })[target.identity]
+    if epitaph then self:logmsg("　%s", epitaph) end
     self:emit({ type = "death", target = target.id })
 
     self:trig(target, "onDeath", source)

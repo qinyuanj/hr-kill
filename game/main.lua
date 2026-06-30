@@ -602,17 +602,37 @@ local function drawHand()
     if goal then theme.print(goal, theme.fonts.tiny, theme.colors.textDim, 16, G.L.h - 150) end
 end
 
--- a tongue-in-cheek one-line verdict from the human's play pattern (GDD §8.4 flavor)
-local function reportVerdict(me)
+-- a tongue-in-cheek one-line verdict (GDD §8.4 flavor), keyed off identity + outcome,
+-- with an extreme play-stat able to steal the headline as a memorable "achievement".
+local function reportVerdict(me, meWin)
     local s = me.stats
-    if not me.alive then return "已被「优化」离场，江湖再见 🫡" end
-    if s.kills >= 2 then return "优化大师：手起刀落，毫不留情 🔪" end
+    -- a truly standout stat is too funny not to lead with, win or lose
+    if s.kills >= 3 then return "优化大师：手起刀落，全场最佳 HR 🔪" end
+    if s.pua >= 4 then return "PUA 重灾区：建议保留证据走劳动仲裁 ⚖️" end
+    if s.blame >= 3 then return "金牌背锅侠：这锅我背得心甘情愿 🎒" end
+    -- otherwise: identity + win/loss flavor
+    if meWin then
+        local won = ({
+            boss  = "老板赢麻了：团队稳了，年终奖稳了 💰",
+            loyal = "嫡系标兵：跟对了人，吃得开 🤝",
+            rebel = "摸鱼党大获全胜：组织起来力量大 🐟🎉",
+            spy   = "螳螂捕蝉黄雀在后：最后笑的是你 🪤",
+        })[me.identity]
+        return won or "赢了：今天的班没白加 🎉"
+    end
+    if not me.alive then
+        local dead = ({
+            boss  = "老板被毕业：公司没了，梦也碎了 💼💥",
+            loyal = "为老板尽忠到最后一刻，奈何大势已去 🥀",
+            rebel = "摸鱼一时爽，被优化火葬场 🔥",
+            spy   = "反骨仔的算盘，终究落了空 🧮",
+        })[me.identity]
+        return dead or "已被「优化」离场，江湖再见 🫡"
+    end
     if s.overtimeOut >= 5 then return "加班标兵：把加班打在别人身上 🏆" end
-    if s.pua >= 3 then return "PUA 重灾区：建议保留证据走劳动仲裁 ⚖️" end
-    if s.blame >= 2 then return "资深背锅侠：这锅我背得心甘情愿 🎒" end
     if s.pie >= 3 then return "画饼充饥：饼是真的香，活是真的多 🥧" end
     if s.dmgTaken == 0 then return "佛系摸鱼：全程毫发无伤，闷声发财 🐟" end
-    return "平平无奇打工人，明天还得接着上 ☕"
+    return "这局没赢：当代打工人的常态，明天接着上 ☕"
 end
 
 -- Role-reveal overlay shown at the start of each game.
@@ -696,8 +716,8 @@ local function drawGameOver()
         theme.print(row[1], theme.fonts.small, theme.colors.textDim, rx, ry)
         theme.print(row[2], theme.fonts.small, theme.colors.text, rx + colW - 92, ry)
     end
-    theme.printf(reportVerdict(me), theme.fonts.normal, theme.colors.good,
-        bx, by + bh - 34, bw, "center")
+    theme.printf(reportVerdict(me, meWin), theme.fonts.normal,
+        meWin and theme.colors.good or theme.colors.textDim, bx, by + bh - 34, bw, "center")
 
     theme.printf("按 R 或点击「重开」再来一局", theme.fonts.normal, theme.colors.textDim,
         0, by + bh + 16, w, "center")
