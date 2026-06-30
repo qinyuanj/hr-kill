@@ -654,5 +654,53 @@ do
         "libk.tag=" .. tostring(libk._noDodgeTurn))
 end
 
+-- Helper: a 4-seat game whose bystanders have no skills, so only the character
+-- under test can affect the outcome. Returns the game.
+local function neutralGame(seed, identities)
+    local g = newGame(4, seed)
+    for i, p in ipairs(g.players) do
+        p.char = { id = 0, title = "测试", name = "桩" .. i, maxHp = 5, skills = {} }
+        p.maxHp = 5; p.hp = 5; p.hand = {}
+        p.identity = identities[i]
+    end
+    return g
+end
+
+print("[26] 王兼容 样式崩了: entering the dying zone makes a chosen other player lose 1 精神值")
+do
+    local g = neutralGame(41, { "boss", "loyal", "rebel", "spy" })
+    local wang = withChar(g, 3, 1)              -- 王兼容 (maxHp 3)
+    wang.identity = "rebel"; wang.hp = 1; wang.hand = {}
+    local victim = g.players[2]                 -- hp 5
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("样式崩了") ~= nil end
+    g.askTarget = function(_, _, _, prompt) if prompt and prompt:find("样式崩了") then return victim end end
+    g:dealDamage({ target = wang, source = g.players[3], amount = 1, card = mkCard("加班") })
+    check("the chosen player loses exactly 1 精神值", victim.hp == 4, "victim.hp=" .. victim.hp)
+    check("王兼容 did reach the dying zone (skill fired at hp<=0)", wang.hp <= 0)
+end
+
+print("[27] 罗法援 劳动仲裁: entering the dying zone makes the damage source lose 2 精神值")
+do
+    local g = neutralGame(43, { "rebel", "loyal", "boss", "spy" })
+    local luo = withChar(g, 24, 1)             -- 罗法援
+    luo.identity = "rebel"; luo.hp = 1; luo.hand = {}
+    local src = g.players[3]                    -- the attacker, hp 5
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("劳动仲裁") ~= nil end
+    g:dealDamage({ target = luo, source = src, amount = 1, card = mkCard("加班") })
+    check("the damage source loses exactly 2 精神值", src.hp == 3, "src.hp=" .. src.hp)
+end
+
+print("[28] 郑信仰 与公司共成长: boss damage is compensated — 郑信仰 pays 1, boss nets 0")
+do
+    local g = neutralGame(47, { "boss", "rebel", "rebel", "spy" })
+    local boss = g.players[1]; boss.hp = 3      -- maxHp 5, so the +1 heal isn't capped
+    local zheng = withChar(g, 23, 2)           -- 郑信仰 (maxHp 3)
+    zheng.identity = "rebel"; zheng.hp = 3
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("与公司共成长") ~= nil end
+    g:dealDamage({ target = boss, source = g.players[3], amount = 1, card = mkCard("加班") })
+    check("boss HP nets zero (took 1, healed 1 back)", boss.hp == 3, "boss.hp=" .. boss.hp)
+    check("郑信仰 paid 1 精神值 for the compensation", zheng.hp == 2, "zheng.hp=" .. zheng.hp)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
