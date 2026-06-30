@@ -142,6 +142,22 @@ local function planAction(game, me)
         end
     end
 
+    -- 1b) boss-team field medic: a loyalist (or the boss) spends a spare 画饼 to top up
+    -- an endangered boss before it gets focused into the dying zone. Losing the boss
+    -- ends the game, so keeping it alive is worth more than holding the card.
+    if (me.identity == "loyal" or me.identity == "boss") then
+        local boss = game:bossPlayer()
+        local healTarget = (me.identity == "loyal" and boss.hp <= 2 and boss.hp < boss.maxHp) and boss
+            or (me.identity == "boss" and me.hp <= 3 and me.hp < me.maxHp) and me
+        if healTarget then
+            for _, c in ipairs(game:handCardsAs(me, "peach")) do
+                if c.subtype == "peach" and game:canPlayInPhase(me, c) then
+                    return { type = "playCard", cardId = c.id, targetIds = { healTarget.id } }
+                end
+            end
+        end
+    end
+
     -- 2) equip useful gear (one per call), best-first, skip downgrades
     for _, c in ipairs(me.hand) do
         if c.type == "equip" then
