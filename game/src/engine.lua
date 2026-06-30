@@ -77,6 +77,14 @@ function Engine:setup(opts)
     for _ = 1, cfg.spy do ids[#ids + 1] = "spy" end
     self.rng:shuffle(ids)
 
+    -- How out-numbered the boss is: (rebels+spies) − (boss-team). Drives both the
+    -- survivability bonus below and the opening-hand size. Per table: 4p=0, 5p=1,
+    -- 6p=2, 7p=1, 8p=2 — only the 4p table is NOT out-numbered.
+    local bossDeficit = (cfg.rebel + cfg.spy) - (1 + cfg.loyal)
+    -- At 4p the boss gets no survivability bonus yet its coordination + first-move edge
+    -- over-performs (~55% boss-team), so it opens with one fewer card to pull it to ~50%.
+    local bossStartCards = (bossDeficit <= 0) and 3 or 4
+
     -- Character pool: shuffle a copy, deal one to each player.
     local pool = {}
     for i = 1, #self.allCharacters do pool[i] = self.allCharacters[i] end
@@ -92,15 +100,14 @@ function Engine:setup(opts)
         --     HP alone just makes those grind, card advantage is what wins them.
         -- The single-loyalist deficit-1 table (5p) would be over-buffed by a per-turn
         -- draw, so it instead gets +1 HP *on top of* the cushion.
-        -- NET per table ─ 4p: +0HP · 5p: +2HP · 6p: +2HP & +1 draw · 7p: +2HP ·
-        --                 8p: +3HP & +1 draw.  (measured 5p boss-team ≈48% at +2 vs
-        --                 ≈43% at +1, so the +2 stack is intentional, not a bug.)
+        -- NET per table ─ 4p: +0HP & −1 opening card · 5p: +2HP · 6p: +2HP & +1 draw ·
+        --                 7p: +2HP · 8p: +3HP & +1 draw.  (measured 5p boss-team ≈48% at
+        --                 +2 vs ≈43% at +1, so the +2 stack is intentional, not a bug.)
         local bossBonus, bossDrawBonus = 0, 0
         if ids[seat] == "boss" then
             bossBonus = math.max(0, cfg.rebel - 1)
-            local deficit = (cfg.rebel + cfg.spy) - (1 + cfg.loyal)
-            bossDrawBonus = (deficit >= 2) and 1 or 0
-            if deficit == 1 and cfg.loyal == 1 then bossBonus = bossBonus + 1 end
+            bossDrawBonus = (bossDeficit >= 2) and 1 or 0
+            if bossDeficit == 1 and cfg.loyal == 1 then bossBonus = bossBonus + 1 end
             local override = tonumber(os.getenv("ZHS_BOSS_BONUS"))
             if override then bossBonus = override end
         end
@@ -136,7 +143,7 @@ function Engine:setup(opts)
     -- Build & deal deck.
     self.deck = cards.buildDeck(self.rng)
     for _, p in ipairs(self.players) do
-        self:drawRaw(p, 4)
+        self:drawRaw(p, p.identity == "boss" and bossStartCards or 4)
     end
 
     -- First turn starts with the boss player.

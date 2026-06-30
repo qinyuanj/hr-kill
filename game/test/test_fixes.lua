@@ -411,5 +411,19 @@ do
     check("tryDodge passes hint='dodge'", seenHint == "dodge", "hint=" .. tostring(seenHint))
 end
 
+----------------------------------------------------------------------
+print("[16] 4p boss opens with 1 fewer card (un-outnumbered table); 6p boss keeps 4")
+do
+    local g4 = newGame(4, 11)
+    local boss4
+    for _, p in ipairs(g4.players) do if p.identity == "boss" then boss4 = p end end
+    check("4p boss opens with 3 cards", #boss4.hand == 3, "hand=" .. #boss4.hand)
+    check("4p deck still conserves (108)", totalCards(g4) == 108, "tot=" .. totalCards(g4))
+    local g6 = newGame(6, 11)
+    local boss6
+    for _, p in ipairs(g6.players) do if p.identity == "boss" then boss6 = p end end
+    check("6p (out-numbered) boss opens with 4 cards", #boss6.hand == 4, "hand=" .. #boss6.hand)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
