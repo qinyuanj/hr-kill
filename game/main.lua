@@ -85,6 +85,17 @@ local function newGame(n)
             sound.play("heal", 0.45)
         elseif ev.type == "death" then
             sound.play("death", 0.55)
+        elseif ev.type == "cardPlayed" then
+            local col = (ev.cardType == "trick" and theme.colors.cardTrick)
+                or (ev.cardType == "equip" and theme.colors.cardEquip)
+                or theme.colors.cardBasic
+            G.anims[#G.anims + 1] = { kind = "label", source = ev.source,
+                text = ev.name, color = col, t = 0.95, maxT = 0.95 }
+            if ev.target then
+                G.anims[#G.anims + 1] = { kind = "cardline", from = ev.source, to = ev.target,
+                    color = col, t = 0.45, maxT = 0.45 }
+            end
+            sound.play("card", 0.3)
         end
         if #G.anims > 48 then table.remove(G.anims, 1) end
     end
@@ -155,6 +166,11 @@ function love.update(dt)
                 G.anims[#G.anims + 1] = { kind = "float", target = 1, text = "-1", color = theme.colors.hpLow, t = 1.1, maxT = 1.1 }
                 if n >= 3 then
                     G.anims[#G.anims + 1] = { kind = "float", target = 3, text = "+1", color = theme.colors.good, t = 1.1, maxT = 1.1 }
+                    G.anims[#G.anims + 1] = { kind = "label", source = 3, text = "PUA", color = theme.colors.cardTrick, t = 0.95, maxT = 0.95 }
+                    G.anims[#G.anims + 1] = { kind = "cardline", from = 3, to = 1, color = theme.colors.cardTrick, t = 0.45, maxT = 0.45 }
+                end
+                if n >= 2 then
+                    G.anims[#G.anims + 1] = { kind = "label", source = 2, text = "卷一下", color = theme.colors.cardBasic, t = 0.95, maxT = 0.95 }
                 end
             end
             love.graphics.captureScreenshot("shot.png")
@@ -771,6 +787,26 @@ local function drawAnims()
                 theme.setColor(a.color, alpha)
                 love.graphics.setFont(theme.fonts.big)
                 love.graphics.printf(a.text, r.x, y, r.w, "center")
+            end
+        elseif a.kind == "cardline" then
+            local rf, rt = G.playerRects[a.from], G.playerRects[a.to]
+            if rf and rt then
+                local alpha = a.t / a.maxT * 0.65
+                theme.setColor(a.color, alpha)
+                love.graphics.setLineWidth(2)
+                love.graphics.line(rf.cx, rf.cy, rt.cx, rt.cy)
+                love.graphics.setLineWidth(1)
+            end
+        elseif a.kind == "label" then
+            local r = G.playerRects[a.source]
+            if r then
+                local alpha = math.min(1, a.t / a.maxT * 1.4)
+                local y = r.y - 8 - prog * 26
+                theme.setColor({ 0, 0, 0 }, alpha * 0.5)
+                love.graphics.setFont(theme.fonts.small)
+                love.graphics.printf(a.text, r.x - 9, y + 1, r.w + 20, "center")
+                theme.setColor(a.color, alpha)
+                love.graphics.printf(a.text, r.x - 10, y, r.w + 20, "center")
             end
         end
     end

@@ -445,6 +445,15 @@ function Engine:emit(ev)
     if self.onEvent then self.onEvent(ev) end
 end
 
+-- Visual hook for a (non-attack) card being played: drives a floating card-name label
+-- over the source and, for a single targeted trick, a tinted source→target line. Attacks
+-- already have their own "attack" animation, so they don't call this. No-op headless.
+function Engine:emitPlay(source, card, target)
+    self:emit({ type = "cardPlayed", source = source.id, name = card.name,
+        cardType = card.type, subtype = card.subtype,
+        target = (target and target.id ~= source.id) and target.id or nil })
+end
+
 ----------------------------------------------------------------------
 -- Damage / healing / dying / death
 ----------------------------------------------------------------------
@@ -1081,7 +1090,10 @@ function Engine:playConverted(user, realCard, asName, targetIds)
                 negated = true
             end
         end
-        if not negated then fn(self, user, virt, targets) end
+        if not negated then
+            self:emitPlay(user, virt, #targets == 1 and targets[1] or nil)
+            fn(self, user, virt, targets)
+        end
     end
 end
 
@@ -1107,6 +1119,7 @@ function Engine:playCard(user, card, targetIds)
     if card.type == "equip" then
         self:equipCard(user, card)
         self:trig(user, "onEquip", card)
+        self:emitPlay(user, card, nil)
         return true
     end
 
@@ -1128,6 +1141,7 @@ function Engine:playCard(user, card, targetIds)
             local t = targets[1] or user
             self:logmsg("%s 使用【画饼】", user.name)
             self:trig(user, "onPlayCard", card)
+            self:emitPlay(user, card, t)
             self:heal(t, 1, "画饼")
             return true
         elseif card.subtype == "wine" then
@@ -1136,6 +1150,7 @@ function Engine:playCard(user, card, targetIds)
             user.flags.wine = true
             self:logmsg("%s 使用【卷一下】，下张【加班】伤害+1", user.name)
             self:trig(user, "onPlayCard", card)
+            self:emitPlay(user, card, nil)
             return true
         end
     end
@@ -1164,6 +1179,7 @@ function Engine:playCard(user, card, targetIds)
             self:toDiscard(card)
             return true
         end
+        self:emitPlay(user, card, #targets == 1 and targets[1] or nil)
         -- Remove the card from hand BEFORE resolving the effect, so a side effect that
         -- discards the user's hand (e.g. 老板 errantly killing a 嫡系) can't double-handle
         -- the still-in-hand card. Delayed tricks (试用期考核) are placed by fn itself.
