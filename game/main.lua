@@ -9,6 +9,7 @@ local AI     = require("src.ai")
 local Chars  = require("src.characters")
 local cards  = require("src.cards")
 local theme  = require("src.theme")
+local sound  = require("src.sound")
 
 -- Surface runtime crashes to stderr (the default LÖVE error screen is graphical and
 -- prints nothing, which makes headless screenshot/debug runs impossible to diagnose).
@@ -73,16 +74,22 @@ local function newGame(n)
     G.game.onEvent = function(ev)
         if ev.type == "attack" then
             G.anims[#G.anims + 1] = { kind = "attack", from = ev.source, to = ev.target, t = 0.5, maxT = 0.5 }
+            sound.play("attack", 0.5)
         elseif ev.type == "damage" then
             G.anims[#G.anims + 1] = { kind = "float", target = ev.target,
                 text = "-" .. ev.amount, color = theme.colors.hpLow, t = 1.1, maxT = 1.1 }
+            sound.play("damage", 0.45)
         elseif ev.type == "heal" then
             G.anims[#G.anims + 1] = { kind = "float", target = ev.target,
                 text = "+" .. ev.amount, color = theme.colors.good, t = 1.1, maxT = 1.1 }
+            sound.play("heal", 0.45)
+        elseif ev.type == "death" then
+            sound.play("death", 0.55)
         end
         if #G.anims > 48 then table.remove(G.anims, 1) end
     end
     G.anims = {}
+    G._endSoundPlayed = false
     G.game:start()
     G.selecting = nil
     G.flash = nil
@@ -107,6 +114,8 @@ function love.load()
     theme.loadFonts()
     love.graphics.setBackgroundColor(theme.colors.bg)
     love.keyboard.setKeyRepeat(true)
+    sound.load()
+    if SHOT then sound.enabled = false end   -- no audio during headless capture
     newGame(6)
     -- screenshot helper: pin the cursor so hover-driven UI (tooltips) renders for capture
     if SHOT then
@@ -158,6 +167,14 @@ function love.update(dt)
     for i = #G.anims, 1, -1 do
         G.anims[i].t = G.anims[i].t - dt
         if G.anims[i].t <= 0 then table.remove(G.anims, i) end
+    end
+    -- win/lose sting, once, when the game resolves
+    if G.game.winner and not G._endSoundPlayed then
+        G._endSoundPlayed = true
+        local me = humanPlayer()
+        local meWin = (G.game.winner == me.identity)
+            or (G.game.winner == "boss" and (me.identity == "boss" or me.identity == "loyal"))
+        sound.play(meWin and "win" or "lose", 0.6)
     end
     if G.req == nil then return end             -- game over
     -- _G.AUTOPLAY lets a test harness drive the human seat with the AI too.
@@ -647,7 +664,7 @@ local function drawHelp()
         "      「技·」按钮发动主动技；「结束回合」结束出牌。",
         "      被加班时点【摸鱼】响应，或点取消承受伤害。",
         "      悬停手牌/玩家可查看牌效果与角色技能。",
-        "顶部：人数 可切换 4–8 人重开。局终生成「职场报告」。",
+        "顶部：人数 可切换 4–8 人重开。局终生成「职场报告」。M 键静音。",
     }
     local y = h * 0.10
     for _, ln in ipairs(lines) do
@@ -818,7 +835,7 @@ function love.draw()
     drawHelp()
 
     -- hint bottom-left
-    theme.print("H 帮助 · 悬停查看牌/角色", theme.fonts.tiny, theme.colors.textDim, 8, G.L.h - 16)
+    theme.print("H 帮助 · M 静音 · 悬停查看牌/角色", theme.fonts.tiny, theme.colors.textDim, 8, G.L.h - 16)
 end
 
 ----------------------------------------------------------------------
@@ -934,6 +951,9 @@ end
 function love.keypressed(key)
     if key == "h" then G.help = not G.help
     elseif key == "r" then newGame(G.numPlayers)
+    elseif key == "m" then
+        local on = sound.toggle()
+        flash(on and "音效已开启" or "音效已静音")
     elseif key == "escape" then
         if G.help then G.help = false else love.event.quit() end
     end

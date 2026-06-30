@@ -586,6 +586,7 @@ function Engine:killPlayer(target, source)
     target.revealed = true
     self:logmsg("☠ %s【%s · %s·%s】阵亡！", target.name, self.IDENTITY_CN[target.identity],
         target.char.title, target.char.name)
+    self:emit({ type = "death", target = target.id })
 
     self:trig(target, "onDeath", source)
 

@@ -61,6 +61,12 @@ lua headless.lua 80 8 1 --verbose     # 带战报尾部
 # 针对性回归测试（覆盖代码评审发现并修复的 bug）
 lua test/test_fixes.lua
 
+# 平衡性：各人数胜率/平均回合数（经验性调参用）
+lua test/balance.lua 400
+
+# 程序化音效生成逻辑（用功能性 love.sound/audio 桩验证）
+lua test/sound_test.lua
+
 # UI 代码路径冒烟测试（stub 掉 love，AUTOPLAY 跑满帧）
 lua test/ui_smoke.lua 9000
 ```
