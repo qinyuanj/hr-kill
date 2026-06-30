@@ -516,10 +516,23 @@ local function drawHand()
         theme.identityColor(me.identity), 16, G.L.h - 150)
 end
 
+-- a tongue-in-cheek one-line verdict from the human's play pattern (GDD §8.4 flavor)
+local function reportVerdict(me)
+    local s = me.stats
+    if not me.alive then return "已被「优化」离场，江湖再见 🫡" end
+    if s.kills >= 2 then return "优化大师：手起刀落，毫不留情 🔪" end
+    if s.overtimeOut >= 5 then return "加班标兵：把加班打在别人身上 🏆" end
+    if s.pua >= 3 then return "PUA 重灾区：建议保留证据走劳动仲裁 ⚖️" end
+    if s.blame >= 2 then return "资深背锅侠：这锅我背得心甘情愿 🎒" end
+    if s.pie >= 3 then return "画饼充饥：饼是真的香，活是真的多 🥧" end
+    if s.dmgTaken == 0 then return "佛系摸鱼：全程毫发无伤，闷声发财 🐟" end
+    return "平平无奇打工人，明天还得接着上 ☕"
+end
+
 local function drawGameOver()
     if G.req ~= nil or not G.game.winner then return end
     local w, h = G.L.w, G.L.h
-    theme.setColor({ 0, 0, 0 }, 0.72)
+    theme.setColor({ 0, 0, 0 }, 0.78)
     love.graphics.rectangle("fill", 0, 0, w, h)
     local win = G.game.winner
     local txt = ({ boss = "老板阵营胜利", rebel = "摸鱼党胜利", spy = "反骨仔（内奸）胜利",
@@ -527,10 +540,49 @@ local function drawGameOver()
     local me = humanPlayer()
     local meWin = (win == me.identity) or (win == "boss" and (me.identity == "boss" or me.identity == "loyal"))
     theme.printf(meWin and "🎉 你赢了！" or "你输了", theme.fonts.huge,
-        meWin and theme.colors.good or theme.colors.bad, 0, h * 0.32, w, "center")
-    theme.printf(txt, theme.fonts.big, theme.colors.text, 0, h * 0.32 + 56, w, "center")
+        meWin and theme.colors.good or theme.colors.bad, 0, h * 0.14, w, "center")
+    theme.printf(txt .. "  ·  你是【" .. theme.identityCN[me.identity] .. "】",
+        theme.fonts.big, theme.colors.text, 0, h * 0.14 + 54, w, "center")
+
+    -- 职场报告 stat card
+    local s = me.stats
+    local rows = {
+        { "加班（出）", s.overtimeOut .. " 次" },
+        { "被加班", s.overtimeIn .. " 次" },
+        { "被 PUA", s.pua .. " 次" },
+        { "画饼", s.pie .. " 口" },
+        { "甩锅", s.blame .. " 次" },
+        { "造成精神打击", s.dmgDealt .. " 点" },
+        { "承受精神打击", s.dmgTaken .. " 点" },
+        { "「优化」他人", s.kills .. " 人" },
+    }
+    local bw, rowH = 420, 30
+    local bx = (w - bw) / 2
+    local by = h * 0.14 + 104
+    local bh = 44 + math.ceil(#rows / 2) * rowH + 44
+    theme.setColor({ 0.10, 0.11, 0.15 }, 0.96)
+    theme.rrect("fill", bx, by, bw, bh, 10)
+    theme.setColor(theme.colors.accent, 0.6)
+    love.graphics.setLineWidth(1.5)
+    theme.rrect("line", bx, by, bw, bh, 10)
+    love.graphics.setLineWidth(1)
+    theme.printf("📋 你的职场报告 · " .. me.char.title .. "·" .. me.char.name,
+        theme.fonts.normal, theme.colors.accent, bx, by + 12, bw, "center")
+    -- two-column rows
+    local colW = bw / 2
+    for i, row in ipairs(rows) do
+        local col = (i - 1) % 2
+        local rrow = math.floor((i - 1) / 2)
+        local rx = bx + 20 + col * colW
+        local ry = by + 44 + rrow * rowH
+        theme.print(row[1], theme.fonts.small, theme.colors.textDim, rx, ry)
+        theme.print(row[2], theme.fonts.small, theme.colors.text, rx + colW - 92, ry)
+    end
+    theme.printf(reportVerdict(me), theme.fonts.normal, theme.colors.good,
+        bx, by + bh - 34, bw, "center")
+
     theme.printf("按 R 或点击「重开」再来一局", theme.fonts.normal, theme.colors.textDim,
-        0, h * 0.32 + 104, w, "center")
+        0, by + bh + 16, w, "center")
 end
 
 local function drawHelp()
@@ -604,6 +656,7 @@ end
 -- Draw transient effects: attack lines (with a traveling spark) and floating
 -- ±N spirit-value numbers above the affected player's panel.
 local function drawAnims()
+    if G.req == nil then return end   -- suppress lingering effects under the game-over report
     for _, a in ipairs(G.anims) do
         local prog = 1 - a.t / a.maxT     -- 0 → 1 over the animation's life
         if a.kind == "attack" then

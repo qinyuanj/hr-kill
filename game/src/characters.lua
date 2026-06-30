@@ -505,6 +505,7 @@ C.list = {
                 local aiYes = (p.hp > 1 and ctx.target.hp <= 1)
                 if game:askYesNo(p, string.format("【背锅侠】替 %s 承受伤害并摸2张？", ctx.target.name), aiYes) then
                     ctx.target = p
+                    p.stats.blame = p.stats.blame + 1
                     game:logmsg("%s【背锅侠】替人受过", p.name)
                     game:draw(p, 2, "背锅侠")
                     return true

@@ -121,6 +121,9 @@ function Engine:setup(opts)
             used = {},             -- per-turn skill / equip usage flags
             flags = {},            -- per-turn flags (wine, skipDraw, ...)
             armorUsedThisTurn = false,
+            -- end-of-game「职场报告」counters (GDD §8.4)
+            stats = { overtimeOut = 0, overtimeIn = 0, pua = 0, pie = 0,
+                      blame = 0, dmgDealt = 0, dmgTaken = 0, kills = 0 },
         }
         if p.identity == "boss" then
             p.revealed = true
@@ -456,6 +459,10 @@ function Engine:dealDamage(ctx)
     self:logmsg("%s 受到 %d 点伤害%s（精神值 %d/%d）", target.name, amount,
         ctx.source and ("，来源 " .. ctx.source.name) or "", math.max(target.hp, 0), target.maxHp)
     self:emit({ type = "damage", target = target.id, amount = amount })
+    target.stats.dmgTaken = target.stats.dmgTaken + amount
+    if ctx.source and ctx.source.id ~= target.id then
+        ctx.source.stats.dmgDealt = ctx.source.stats.dmgDealt + amount
+    end
 
     -- triggers: dealer then taker
     if ctx.source and ctx.source.alive then self:trig(ctx.source, "onDealDamage", target, ctx) end
@@ -497,6 +504,7 @@ function Engine:maybeSubstituteDamage(ctx)
                     self:removeFromHand(victim, backpan)
                     self:toDiscard(backpan)
                     self:logmsg("%s 使用【背锅】，伤害转移给 %s", victim.name, t.name)
+                    victim.stats.blame = victim.stats.blame + 1
                     ctx.target = t
                 end
             end
@@ -567,6 +575,7 @@ end
 function Engine:usePeachCard(player, card, target)
     self:removeFromHand(player, card)
     self:toDiscard(card)
+    player.stats.pie = player.stats.pie + 1
     local asName = (card.subtype == "peach") and "画饼" or (card.name .. "→画饼")
     self:logmsg("%s 使用 %s 为 %s 回复精神值", player.name, asName, target.name)
     self:heal(target, 1, "画饼")
@@ -592,6 +601,7 @@ function Engine:killPlayer(target, source)
 
     -- rewards / punishment
     if source and source.alive and source.id ~= target.id then
+        source.stats.kills = source.stats.kills + 1
         if target.identity == "rebel" then
             self:logmsg("%s 击杀【摸鱼党】，摸 3 张牌", source.name)
             self:draw(source, 3, "击杀奖励")
@@ -680,6 +690,9 @@ function Engine:performAttack(source, target, opts)
     -- transfer may have changed ctx.target
     target = ctx.target
     self:emit({ type = "attack", source = source.id, target = target.id })
+    if opts.card and opts.card.subtype == "attack" then
+        target.stats.overtimeIn = target.stats.overtimeIn + 1
+    end
 
     -- wine bonus
     if opts.card and source.flags.wine then
@@ -744,6 +757,7 @@ local Tricks = {}
 
 function Tricks.PUA(game, user, card, targets)
     local t = targets[1]
+    t.stats.pua = t.stats.pua + 1
     local idx
     if #t.hand >= 2 then
         idx = game:askOption(t, { "弃2张手牌", "受到1点伤害" },
@@ -1034,6 +1048,7 @@ function Engine:playConverted(user, realCard, asName, targetIds)
 
     if virt.type == "basic" and virt.subtype == "attack" then
         user.flags.attacksUsed = (user.flags.attacksUsed or 0) + 1
+        user.stats.overtimeOut = user.stats.overtimeOut + 1
         self:performAttack(user, targets[1], { card = virt, amount = 1, dodgeable = true })
     elseif virt.type == "trick" then
         local fn = Tricks[asName]
@@ -1079,6 +1094,7 @@ function Engine:playCard(user, card, targetIds)
             self:removeFromHand(user, card)
             self:toDiscard(card)
             user.flags.attacksUsed = (user.flags.attacksUsed or 0) + 1
+            user.stats.overtimeOut = user.stats.overtimeOut + 1
             local t = targets[1]
             self:logmsg("%s 对 %s 使用【加班】（%s）", user.name, t.name, cards.label(card))
             self:trig(user, "onPlayCard", card)
@@ -1087,6 +1103,7 @@ function Engine:playCard(user, card, targetIds)
         elseif card.subtype == "peach" then
             self:removeFromHand(user, card)
             self:toDiscard(card)
+            user.stats.pie = user.stats.pie + 1
             local t = targets[1] or user
             self:logmsg("%s 使用【画饼】", user.name)
             self:trig(user, "onPlayCard", card)
