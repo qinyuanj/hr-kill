@@ -434,6 +434,14 @@ function Engine:judge(player, reason)
 end
 
 ----------------------------------------------------------------------
+-- Visual-effect events. The UI registers `game.onEvent`; headless leaves it nil
+-- so this is a no-op outside love2d. Used to drive floating numbers / attack lines.
+----------------------------------------------------------------------
+function Engine:emit(ev)
+    if self.onEvent then self.onEvent(ev) end
+end
+
+----------------------------------------------------------------------
 -- Damage / healing / dying / death
 ----------------------------------------------------------------------
 -- ctx: { source, target, amount, nature, card, dodgeable, cleave }
@@ -447,6 +455,7 @@ function Engine:dealDamage(ctx)
     target.hp = target.hp - amount
     self:logmsg("%s 受到 %d 点伤害%s（精神值 %d/%d）", target.name, amount,
         ctx.source and ("，来源 " .. ctx.source.name) or "", math.max(target.hp, 0), target.maxHp)
+    self:emit({ type = "damage", target = target.id, amount = amount })
 
     -- triggers: dealer then taker
     if ctx.source and ctx.source.alive then self:trig(ctx.source, "onDealDamage", target, ctx) end
@@ -506,6 +515,7 @@ function Engine:loseHp(player, amount, reason)
     player.hp = player.hp - amount
     self:logmsg("%s 失去 %d 点精神值%s（%d/%d）", player.name, amount,
         reason and ("（" .. reason .. "）") or "", math.max(player.hp, 0), player.maxHp)
+    self:emit({ type = "damage", target = player.id, amount = amount })
     if player.hp <= 0 then self:enterDying(player, nil) end
 end
 
@@ -516,6 +526,7 @@ function Engine:heal(player, amount, reason)
     if player.hp ~= before then
         self:logmsg("%s 回复 %d 点精神值%s（%d/%d）", player.name, player.hp - before,
             reason and ("（" .. reason .. "）") or "", player.hp, player.maxHp)
+        self:emit({ type = "heal", target = player.id, amount = player.hp - before })
     end
 end
 
@@ -668,6 +679,7 @@ function Engine:performAttack(source, target, opts)
     end
     -- transfer may have changed ctx.target
     target = ctx.target
+    self:emit({ type = "attack", source = source.id, target = target.id })
 
     -- wine bonus
     if opts.card and source.flags.wine then

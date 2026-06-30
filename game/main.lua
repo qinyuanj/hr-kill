@@ -19,6 +19,7 @@ local G = {
     selecting = nil,      -- { cardId, targetIds } during play-phase target selection
     flash = nil,          -- { text, t }
     help = false,
+    anims = {},           -- transient visual effects (floating numbers, attack lines)
     -- layout caches (rebuilt each frame)
     handRects = {},
     playerRects = {},
@@ -58,6 +59,20 @@ local function newGame(n)
         seed = seed,
         characters = Chars.list,
     })
+    -- spawn visual effects from engine events (no-op data the engine pushes via emit)
+    G.game.onEvent = function(ev)
+        if ev.type == "attack" then
+            G.anims[#G.anims + 1] = { kind = "attack", from = ev.source, to = ev.target, t = 0.5, maxT = 0.5 }
+        elseif ev.type == "damage" then
+            G.anims[#G.anims + 1] = { kind = "float", target = ev.target,
+                text = "-" .. ev.amount, color = theme.colors.hpLow, t = 1.1, maxT = 1.1 }
+        elseif ev.type == "heal" then
+            G.anims[#G.anims + 1] = { kind = "float", target = ev.target,
+                text = "+" .. ev.amount, color = theme.colors.good, t = 1.1, maxT = 1.1 }
+        end
+        if #G.anims > 48 then table.remove(G.anims, 1) end
+    end
+    G.anims = {}
     G.game:start()
     G.selecting = nil
     G.flash = nil
@@ -103,6 +118,15 @@ function love.update(dt)
         end
         if (atTarget and shotFrame > 30) or shotFrame > 6000 or G.req == nil then
             shotDone = true
+            -- demo: inject full-strength effects so screenshots can verify their rendering
+            if os.getenv("ZHS_SHOT_DEMO") then
+                local n = G.numPlayers
+                G.anims[#G.anims + 1] = { kind = "attack", from = (n >= 2 and 2 or 1), to = 1, t = 0.5, maxT = 0.5 }
+                G.anims[#G.anims + 1] = { kind = "float", target = 1, text = "-1", color = theme.colors.hpLow, t = 1.1, maxT = 1.1 }
+                if n >= 3 then
+                    G.anims[#G.anims + 1] = { kind = "float", target = 3, text = "+1", color = theme.colors.good, t = 1.1, maxT = 1.1 }
+                end
+            end
             love.graphics.captureScreenshot("shot.png")
             G._quitAt = shotFrame + 3
         end
@@ -113,6 +137,11 @@ function love.update(dt)
     if G.flash then
         G.flash.t = G.flash.t - dt
         if G.flash.t <= 0 then G.flash = nil end
+    end
+    -- advance transient animations (keep ticking even after game over)
+    for i = #G.anims, 1, -1 do
+        G.anims[i].t = G.anims[i].t - dt
+        if G.anims[i].t <= 0 then table.remove(G.anims, i) end
     end
     if G.req == nil then return end             -- game over
     -- _G.AUTOPLAY lets a test harness drive the human seat with the AI too.
@@ -572,6 +601,37 @@ local function drawTooltip(lines, mx, my)
     end
 end
 
+-- Draw transient effects: attack lines (with a traveling spark) and floating
+-- ±N spirit-value numbers above the affected player's panel.
+local function drawAnims()
+    for _, a in ipairs(G.anims) do
+        local prog = 1 - a.t / a.maxT     -- 0 → 1 over the animation's life
+        if a.kind == "attack" then
+            local rf, rt = G.playerRects[a.from], G.playerRects[a.to]
+            if rf and rt then
+                local alpha = a.t / a.maxT
+                theme.setColor(theme.colors.bad, alpha * 0.8)
+                love.graphics.setLineWidth(3)
+                love.graphics.line(rf.cx, rf.cy, rt.cx, rt.cy)
+                love.graphics.setLineWidth(1)
+                local px = rf.cx + (rt.cx - rf.cx) * prog
+                local py = rf.cy + (rt.cy - rf.cy) * prog
+                theme.setColor(theme.colors.accent, alpha)
+                love.graphics.circle("fill", px, py, 6)
+            end
+        elseif a.kind == "float" then
+            local r = G.playerRects[a.target]
+            if r then
+                local alpha = math.min(1, a.t / a.maxT * 1.5)
+                local y = r.y - 4 - prog * 36
+                theme.setColor(a.color, alpha)
+                love.graphics.setFont(theme.fonts.big)
+                love.graphics.printf(a.text, r.x, y, r.w, "center")
+            end
+        end
+    end
+end
+
 -- Build + draw the hover tooltip for whatever the cursor is over (card or player).
 local function drawHoverTooltip()
     if G.help or G.req == nil then return end
@@ -639,6 +699,7 @@ function love.draw()
         theme.fonts.small, theme.colors.textDim, G.L.cx - 100, G.L.cy - 8, 200, "center")
 
     for _, p in ipairs(G.game.players) do drawPlayer(p) end
+    drawAnims()
     drawHand()
     drawLog()
     drawPromptBar()
