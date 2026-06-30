@@ -314,9 +314,18 @@ local function drawCardFace(c, x, y, w, h, opts)
     local col = theme.colors.cardBasic
     if c.type == "trick" then col = theme.colors.cardTrick
     elseif c.type == "equip" then col = theme.colors.cardEquip end
+    local small = w < 78
 
-    theme.setColor({ col[1] * 0.30, col[2] * 0.30, col[3] * 0.34 })
+    -- body
+    theme.setColor({ col[1] * 0.28, col[2] * 0.28, col[3] * 0.33 })
     theme.rrect("fill", x, y, w, h, 7)
+    -- type-colored header accent strip
+    theme.setColor({ col[1] * 0.55, col[2] * 0.55, col[3] * 0.58 })
+    theme.rrect("fill", x + 3, y + 3, w - 6, 4, 2)
+
+    if opts.dim then theme.setColor({ 0, 0, 0 }, 0.5); theme.rrect("fill", x, y, w, h, 7) end
+
+    -- border (selection / candidate states win over the type color)
     if opts.selected then
         theme.setColor(theme.colors.highlight); love.graphics.setLineWidth(3)
     elseif opts.candidate then
@@ -327,16 +336,24 @@ local function drawCardFace(c, x, y, w, h, opts)
     theme.rrect("line", x, y, w, h, 7)
     love.graphics.setLineWidth(1)
 
-    if opts.dim then theme.setColor({ 0, 0, 0 }, 0.45); theme.rrect("fill", x, y, w, h, 7) end
-
-    -- suit/rank top-left
+    -- suit/rank in the top-left and bottom-right corners (like a real card)
     local suitCol = cards.isRed(c) and theme.colors.cardRed or theme.colors.text
-    theme.print(cards.SUIT_CN[c.suit] .. cards.rankStr(c), theme.fonts.small, suitCol, x + 6, y + 5)
+    local sr = cards.SUIT_CN[c.suit] .. cards.rankStr(c)
+    theme.print(sr, theme.fonts.small, suitCol, x + 6, y + 10)
+    if not small then
+        local fnt = theme.fonts.tiny
+        love.graphics.setFont(fnt)
+        theme.setColor(suitCol)
+        love.graphics.print(sr, x + w - 8 - fnt:getWidth(sr), y + h - 16)
+    end
     -- name centered
-    theme.printf(c.name, theme.fonts.normal, theme.colors.text, x, y + h / 2 - 26, w, "center")
-    -- type tag
+    local nameFont = small and theme.fonts.small or theme.fonts.normal
+    theme.printf(c.name, nameFont, opts.dim and theme.colors.textDim or theme.colors.text,
+        x + 2, y + h / 2 - (small and 16 or 22), w - 4, "center")
+    -- type tag footer
     local tag = c.type == "basic" and "基本" or (c.type == "trick" and "锦囊" or "装备")
-    theme.printf(tag, theme.fonts.tiny, theme.colors.textDim, x, y + h - 18, w, "center")
+    theme.printf(tag, theme.fonts.tiny, { col[1] * 0.9, col[2] * 0.9, col[3] * 0.95 },
+        x, y + h - 17, w, "center")
 end
 
 local function drawHpPips(p, x, y)
