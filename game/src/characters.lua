@@ -556,7 +556,14 @@ C.list = {
         s2 = "打卡冠军：回合结束时，若本回合造成过伤害，回复1点精神值。",
         skills = {
             drawNumMod = function(game, p, base)
-                if game:askYesNo(p, "【福报】少摸1张，换本回合【加班】无限制？") then
+                -- AI default: trade the draw for unlimited 加班 ONLY when 周996 actually holds
+                -- the attacks to spend it on (>=2 加班-capable cards). The unlimited budget
+                -- creates no cards, so with <2 加班 it buys nothing and the lost draw is pure
+                -- waste — the old always-yes default bled 周996 a card almost every turn (a real
+                -- drag on its win rate). Humans are still asked and decide for themselves.
+                local atks = 0
+                for _, c in ipairs(p.hand) do if game:cardActsAs(p, c, "attack") then atks = atks + 1 end end
+                if game:askYesNo(p, "【福报】少摸1张，换本回合【加班】无限制？", atks >= 2) then
                     p.flags.unlimitedAttack = true
                     return base - 1
                 end
