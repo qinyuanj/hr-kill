@@ -66,6 +66,7 @@ local function bestTarget(game, me, candidates, hint)
     if #candidates == 0 then return nil end
     if hint == "self" then
         for _, p in ipairs(candidates) do if p.id == me.id then return p end end
+        return candidates[1]   -- self not offered: fail closed, don't fall through to attacking an enemy
     end
     if hint == "ally" then
         -- prefer self, else boss if I'm boss-aligned, else lowest hp

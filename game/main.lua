@@ -103,6 +103,9 @@ local function newGame(n)
     G._endSoundPlayed = false
     G.game:start()
     G.selecting = nil
+    G.cardMenu = nil
+    G.help = nil
+    G.logScroll = 0
     G.flash = nil
     G.req = G.game:resume(nil)
     G.aiTimer = 0
@@ -116,6 +119,7 @@ end
 -- resume the engine with an answer; capture the next request
 local function step(answer)
     G.selecting = nil
+    G.cardMenu = nil   -- never let a half-open conversion menu survive a coroutine resume
     G.req = G.game:resume(answer)
     G.aiTimer = 0
 end
@@ -283,7 +287,10 @@ local function layout()
     local req = G.req
     local by = handY - 46
     if req and req.player and req.player.isHuman then
-        if req.kind == "playAction" then
+        -- while a conversion menu is open or a target is being picked, hide the play-phase
+        -- action buttons: otherwise they sit under the menu (stealing its clicks) or let a
+        -- stray click end the turn / fire a skill and abandon the in-progress card play.
+        if req.kind == "playAction" and not G.cardMenu and not G.selecting then
             -- end turn
             addButton("结束回合", playW - 116, by, 104, 36, theme.colors.btnDanger, function()
                 step({ type = "end" })
@@ -504,6 +511,7 @@ local function drawLog()
     local maxLines = math.floor(areaH / lineH)
     local log = G.game.log
     local total = #log
+    G.logMaxScroll = math.max(0, total - maxLines)   -- for the wheel clamp
     local startI = math.max(1, total - maxLines + 1 - G.logScroll)
     local endI = math.min(total, startI + maxLines - 1)
     local yy = areaY
@@ -796,7 +804,9 @@ end
 -- Draw transient effects: attack lines (with a traveling spark) and floating
 -- ±N spirit-value numbers above the affected player's panel.
 local function drawAnims()
-    if G.req == nil then return end   -- suppress lingering effects under the game-over report
+    -- suppress lingering effects under the game-over report, but keep ZHS_SHOT_DEMO's
+    -- injected effects visible (the game may have ended during the screenshot fast-forward).
+    if G.req == nil and not os.getenv("ZHS_SHOT_DEMO") then return end
     for _, a in ipairs(G.anims) do
         local prog = 1 - a.t / a.maxT     -- 0 → 1 over the animation's life
         if a.kind == "attack" then
@@ -997,14 +1007,13 @@ end
 function love.mousepressed(mx, my, button)
     if button ~= 1 or not G.game then return end
     if G.intro then G.intro = false; return end   -- dismiss role-reveal overlay
+    if G.help then G.help = false; return end      -- a click anywhere closes help (and is swallowed)
     layout()
 
     -- buttons first (includes the card-conversion menu options)
     for _, b in ipairs(G.buttons) do
         if theme.pointIn(mx, my, b) then b.action() return end
     end
-
-    if G.help then return end
 
     -- a click that missed the open conversion menu closes it
     if G.cardMenu then G.cardMenu = nil; return end
@@ -1048,7 +1057,8 @@ function love.mousepressed(mx, my, button)
 end
 
 function love.wheelmoved(_, dy)
-    G.logScroll = math.max(0, G.logScroll + dy * 3)
+    -- clamp to the real scrollback so over-scrolling can't pin the view away from new lines
+    G.logScroll = math.max(0, math.min(G.logMaxScroll or 0, G.logScroll + dy * 3))
 end
 
 function love.keypressed(key)
