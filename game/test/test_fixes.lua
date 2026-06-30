@@ -495,5 +495,26 @@ do
     end
 end
 
+----------------------------------------------------------------------
+print("[20] boss-aligned AI never aims an offensive trick (毕业优化) at its own boss")
+do
+    local AI = require("src.ai")
+    local g = newGame(4, 53)
+    local boss
+    for _, p in ipairs(g.players) do if p.identity == "boss" then boss = p end end
+    -- coerce a non-boss seat into a loyalist that we control
+    local me
+    for _, p in ipairs(g.players) do if p.id ~= boss.id then me = p break end end
+    me.identity = "loyal"; me.isHuman = false; me.flags._ai = nil
+    for _, p in ipairs(g.players) do p.hp = 3; p.maxHp = 3 end
+    boss.hp = 1                              -- the ONLY valid 毕业优化 target (hp<=1)
+    me.hand = { mkCard("毕业优化") }
+    g.current = me
+    local action = AI.answer(g, { kind = "playAction", player = me })
+    local hitBoss = action and action.type == "playCard" and action.targetIds and action.targetIds[1] == boss.id
+    check("loyal AI does NOT 毕业优化 its own boss", not hitBoss,
+        "type=" .. tostring(action and action.type) .. " tgt=" .. tostring(action and action.targetIds and action.targetIds[1]))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

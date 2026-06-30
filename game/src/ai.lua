@@ -253,7 +253,26 @@ local function planAction(game, me)
             -- aoe/self trick: just use it
             return { type = "playCard", cardId = c.id, targetIds = {} }
         end
-        local t = bestTarget(game, me, tg, hint or "enemy")
+        -- Single-target tricks reachable here (毕业优化/PUA/试用期考核/日报周报) are all
+        -- offensive, so apply the SAME safeguards as 加班 targeting (chooseAttackTarget):
+        -- a boss-aligned AI must never aim them at its own (public) boss, and the boss
+        -- only strikes players who have already threatened it — otherwise it own-goals.
+        local bossId = game:bossPlayer().id
+        local safe = {}
+        for _, p in ipairs(tg) do
+            if not ((me.identity == "loyal" or me.identity == "boss") and p.id == bossId) then
+                safe[#safe + 1] = p
+            end
+        end
+        if me.identity == "boss" then
+            local threats = {}
+            for _, p in ipairs(safe) do
+                if (game.threat and game.threat[p.id] or 0) > 0 then threats[#threats + 1] = p end
+            end
+            safe = threats
+        end
+        if #safe == 0 then return nil end
+        local t = bestTarget(game, me, safe, hint or "enemy")
         if t then return { type = "playCard", cardId = c.id, targetIds = { t.id } } end
         return nil
     end

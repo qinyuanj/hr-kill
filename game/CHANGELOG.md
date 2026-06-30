@@ -108,6 +108,11 @@ deficit ≥ 2 给「多摸 1 张」，单嫡系 deficit = 1（5 人桌）在体�
   （`askTarget` 返回、`playCard`/`playConverted` 的 targetIds、AI 的 chooseTarget 与 allySave）。
   座位迭代（回合顺序、`bossPlayer`）本就一致使用 seat，不受影响；`humanPlayer` 早已按 `isHuman`
   对象查找。回归测试 [19] 复现换座后 `id != seat` 并验证按 id 解析命中正确玩家。
+- **AI 不再「攻击型锦囊」自摆乌龙打自家老板**：`chooseAttackTarget` 早有「老板阵营不打公开老板」
+  的排除，但攻击型锦囊路径 `useTrickOn` 没有——`bestTarget` 会在无更优解时强行选中老板，于是
+  嫡系/老板 AI 会把【毕业优化】（2~3 伤害）/【PUA】/【试用期考核】砸向自家老板，葬送本方。
+  现 `useTrickOn` 套用与【加班】一致的安全策略：老板阵营排除公开老板，老板仅打已威胁过自己的人。
+  实测老板阵营总体胜率因此 +约3%、对局也变长（嫡系不再误杀老板），需配套下调主公体力补偿（见下）。
 
 ## 测试
 
