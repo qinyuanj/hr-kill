@@ -837,7 +837,7 @@ end
 
 Tricks["拉会对齐"] = function(game, user, card, targets)
     for _, p in ipairs(game:aliveInTurnOrderFrom(user)) do
-        if p.id ~= user.id then
+        if p.id ~= user.id and game:trickAffects(user, card, p) then
             if #p.hand == 0 then
                 p.skipDrawNext = true
                 game:logmsg("%s 无牌可弃，下回合跳过摸牌", p.name)
@@ -1123,6 +1123,19 @@ function Engine:playConverted(user, realCard, asName, targetIds)
             fn(self, user, virt, targets)
         end
     end
+end
+
+-- Per-victim negation for multi-victim (AOE) tricks. Single-target tricks fire
+-- onTargetedByTrick at their call sites (playCard/playConverted); AOE tricks compute
+-- their own victim lists, so a harmful AOE must ask each victim here. Returns true if
+-- the card still affects `victim` (i.e. they did NOT cancel it, e.g. 测试 复现不了).
+function Engine:trickAffects(user, card, victim)
+    if victim.id == user.id then return true end
+    if self:trig(victim, "onTargetedByTrick", card, user) then
+        self:logmsg("%s 令【%s】对其无效", victim.name, card.name)
+        return false
+    end
+    return true
 end
 
 -- 财务 吴报销 流程不对: another player may discard a card to negate an opponent's trick.

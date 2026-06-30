@@ -425,5 +425,27 @@ do
     check("6p (out-numbered) boss opens with 4 cards", #boss6.hand == 4, "hand=" .. #boss6.hand)
 end
 
+----------------------------------------------------------------------
+print("[17] 复现不了 (赵bug) can negate a harmful AOE trick (拉会对齐), once per turn")
+do
+    local g = newGame(4, 21)
+    local user = g.players[1]
+    local zhao = withChar(g, 4, 2)        -- 赵bug 复现不了
+    zhao.used = {}
+    local realYes = g.askYesNo
+    g.askYesNo = function(self, p, prompt, aiDefault)
+        if prompt and prompt:find("复现不了") then return true end
+        return aiDefault and true or false
+    end
+    local la = mkCard("拉会对齐")
+    -- first AOE this turn: 赵bug negates it (the card no longer affects it)
+    local hit1 = g:trickAffects(user, la, zhao)
+    check("复现不了 negates the AOE (trickAffects=false)", hit1 == false, "hit1=" .. tostring(hit1))
+    -- 每回合一次: a second AOE the same turn is NOT negated
+    local hit2 = g:trickAffects(user, la, zhao)
+    check("复现不了 is once-per-turn (2nd AOE lands)", hit2 == true, "hit2=" .. tostring(hit2))
+    g.askYesNo = realYes
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
