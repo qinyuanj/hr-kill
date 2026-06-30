@@ -29,6 +29,12 @@ local IDENTITY_CONFIG = {
 
 Engine.IDENTITY_CN = { boss = "老板", loyal = "嫡系", rebel = "摸鱼党", spy = "反骨仔" }
 
+-- Fixed equipment-slot order. Iterating a player's `equip` map with pairs() would
+-- visit slots in hash order, which Lua randomizes per process — that changes the
+-- order cards hit the discard pile (and thus the post-reshuffle draw order), making
+-- a seeded game non-reproducible. Always iterate slots through this list instead.
+Engine.EQUIP_SLOTS = { "weapon", "armor", "plusHorse", "minusHorse", "treasure" }
+
 ----------------------------------------------------------------------
 -- Construction / setup
 ----------------------------------------------------------------------
@@ -78,6 +84,13 @@ function Engine:setup(opts)
 
     for seat = 1, n do
         local char = pool[seat]
+        -- 主公 convention: the boss is outnumbered, so grant a max-HP bonus that
+        -- scales gently with table size (more rebels ⇒ bigger cushion). This keeps
+        -- a random-character boss survivable without changing their skills.
+        local bossBonus = 0
+        if ids[seat] == "boss" then
+            bossBonus = (cfg.rebel >= 3) and 2 or 1
+        end
         local p = {
             id = seat,
             seat = seat,
@@ -85,8 +98,8 @@ function Engine:setup(opts)
             isHuman = (seat == self.humanSeat),
             char = char,
             identity = ids[seat],
-            maxHp = char.maxHp,
-            hp = char.maxHp,
+            maxHp = char.maxHp + bossBonus,
+            hp = char.maxHp + bossBonus,
             hand = {},
             equip = { weapon = nil, armor = nil, plusHorse = nil, minusHorse = nil, treasure = nil },
             delayed = {},          -- delayed trick cards placed in front (e.g. 试用期考核)
@@ -353,13 +366,15 @@ end
 -- Ask a player to optionally provide a card (by id) from a candidate list.
 -- candidates: list of cards. Returns the chosen card or nil.
 -- hint guides the AI: "discard" (give up worst), "use"/"gain" (use best).
-function Engine:askCard(player, candidates, prompt, optional, hint)
+function Engine:askCard(player, candidates, prompt, optional, hint, extra)
     if #candidates == 0 then return nil end
     local ids = util.map(candidates, function(c) return c.id end)
-    local ans = self:ask({
+    local req = {
         kind = "chooseCard", player = player, candidates = ids,
         prompt = prompt, optional = optional ~= false, hint = hint or "discard",
-    })
+    }
+    if extra then for k, v in pairs(extra) do req[k] = v end end
+    local ans = self:ask(req)
     if ans == nil then return nil end
     for _, c in ipairs(candidates) do if c.id == ans then return c end end
     return nil
@@ -506,7 +521,7 @@ function Engine:enterDying(target, source)
                 local prompt = needSelf and "你濒死，使用【画饼】自救？" or
                     string.format("%s 濒死，使用【画饼】施救？", target.name)
                 local c = self:askCard(rescuer, peaches, prompt, true,
-                    needSelf and "selfSave" or "allySave")
+                    needSelf and "selfSave" or "allySave", { dyingId = target.id })
                 if not c then break end
                 self:usePeachCard(rescuer, c, target)
                 rescued = true
@@ -544,7 +559,8 @@ function Engine:killPlayer(target, source)
     -- move all cards to discard
     for _, c in ipairs(target.hand) do self:toDiscard(c) end
     target.hand = {}
-    for slot, c in pairs(target.equip) do
+    for _, slot in ipairs(Engine.EQUIP_SLOTS) do
+        local c = target.equip[slot]
         if c then self:toDiscard(c); target.equip[slot] = nil end
     end
     for _, c in ipairs(target.delayed) do self:toDiscard(c) end
@@ -560,7 +576,8 @@ function Engine:killPlayer(target, source)
             local all = {}
             for _, c in ipairs(source.hand) do all[#all + 1] = c end
             self:discardCards(source, all, "错杀嫡系")
-            for slot, c in pairs(source.equip) do
+            for _, slot in ipairs(Engine.EQUIP_SLOTS) do
+                local c = source.equip[slot]
                 if c then self:toDiscard(c); source.equip[slot] = nil end
             end
         end

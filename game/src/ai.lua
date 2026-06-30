@@ -272,7 +272,16 @@ local function decideCard(game, req)
     elseif hint == "selfSave" then
         return worstCard(game, player, cand).id      -- always self-rescue
     elseif hint == "allySave" then
-        return nil                                    -- don't burn peaches on others
+        -- Save a confirmed ally. With hidden identities the only player anyone can
+        -- reliably read is the (public) boss, so boss-aligned players spend a peach
+        -- to keep the boss alive — this is game-critical for the boss team. A loyalist
+        -- with spare peaches also covers a teammate it has positively identified.
+        local dying = req.dyingId and game.players[req.dyingId]
+        if not dying then return nil end
+        local saveBoss = (player.identity == "loyal" or player.identity == "boss")
+            and dying.identity == "boss"
+        if saveBoss then return worstCard(game, player, cand).id end
+        return nil
     elseif hint == "use" or hint == "gain" then
         -- pick the most valuable to use/gain
         local best, bestV
