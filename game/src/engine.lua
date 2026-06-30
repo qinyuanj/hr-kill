@@ -95,21 +95,26 @@ function Engine:setup(opts)
         -- 主公技: the lone boss is out-numbered, so grant bonuses that scale with the
         -- table size, keeping a random-character boss survivable without touching skills.
         -- Two levers, tuned empirically (see test/balance.lua):
-        --   • HP cushion = max(0, rebel-1)  ── one less than the rebel count.
+        --   • HP cushion = max(0, rebel-2)  ── boss-team AI is competent (it no longer
+        --     own-goals), so the cushion is one less than it once needed.
         --   • a per-turn extra draw for the most lop-sided tables (deficit ≥ 2);
         --     HP alone just makes those grind, card advantage is what wins them.
         -- The single-loyalist deficit-1 table (5p) would be over-buffed by a per-turn
-        -- draw, so it instead gets +1 HP *on top of* the cushion.
-        -- NET per table ─ 4p: +0HP & −1 opening card · 5p: +2HP · 6p: +2HP & +1 draw ·
-        --                 7p: +2HP · 8p: +3HP & +1 draw.  (measured 5p boss-team ≈48% at
-        --                 +2 vs ≈43% at +1, so the +2 stack is intentional, not a bug.)
-        local bossBonus, bossDrawBonus = 0, 0
+        -- draw, so it instead gets +1 HP.
+        -- At 4p the boss is NOT out-numbered (deficit 0): it gets no cushion and opens a
+        -- card short, while the lone 摸鱼党 — the role the boss-team's coordination crushes
+        -- there — gets +1 HP to push back toward ~50%.
+        -- NET per table ─ 4p: boss +0HP/−1 card, rebel +1HP · 5p: +1HP · 6p: +1HP & +1 draw ·
+        --                 7p: +1HP · 8p: +2HP & +1 draw.
+        local hpBonus, bossDrawBonus = 0, 0
         if ids[seat] == "boss" then
-            bossBonus = math.max(0, cfg.rebel - 1)
+            hpBonus = math.max(0, cfg.rebel - 2)
             bossDrawBonus = (bossDeficit >= 2) and 1 or 0
-            if bossDeficit == 1 and cfg.loyal == 1 then bossBonus = bossBonus + 1 end
+            if bossDeficit == 1 and cfg.loyal == 1 then hpBonus = hpBonus + 1 end
             local override = tonumber(os.getenv("ZHS_BOSS_BONUS"))
-            if override then bossBonus = override end
+            if override then hpBonus = override end
+        elseif ids[seat] == "rebel" and bossDeficit <= 0 then
+            hpBonus = 1
         end
         local p = {
             id = seat,
@@ -118,8 +123,8 @@ function Engine:setup(opts)
             isHuman = (seat == self.humanSeat),
             char = char,
             identity = ids[seat],
-            maxHp = char.maxHp + bossBonus,
-            hp = char.maxHp + bossBonus,
+            maxHp = char.maxHp + hpBonus,
+            hp = char.maxHp + hpBonus,
             bossDrawBonus = bossDrawBonus,
             hand = {},
             equip = { weapon = nil, armor = nil, plusHorse = nil, minusHorse = nil, treasure = nil },
