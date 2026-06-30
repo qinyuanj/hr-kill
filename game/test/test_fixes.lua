@@ -290,23 +290,24 @@ do
     local g = newGame(4, 23)
     local mei = withChar(g, 14, 2)              -- 新媒体 何爆款
     local atk = g.players[1]
-    -- dodge path: 何爆款 dodges an 加班 with a RED 摸鱼 -> 十万加 展示红牌摸1
-    mei.flags = {}
+    -- dodge path: 何爆款 dodges an 加班 with a RED 摸鱼 -> 十万加 展示红牌摸1.
+    -- (counter lives in `used` so it resets every turn, not just 何爆款's own.)
+    mei.used = {}
     mei.hand = { mkCard("摸鱼", "heart", 5) }
     g.current = atk
     local realAsk = g.askCard
     g.askCard = function(self, p, cands) return cands[1] end   -- force the dodge
     g:performAttack(atk, mei, { card = mkCard("加班"), amount = 1, dodgeable = true })
     g.askCard = realAsk
-    check("十万加 fired on a red 摸鱼 dodge", mei.flags._viralCount == 1,
-        "viral=" .. tostring(mei.flags._viralCount))
+    check("十万加 fired on a red 摸鱼 dodge", mei.used.viralCount == 1,
+        "viral=" .. tostring(mei.used.viralCount))
 
     -- rescue-peach path: using a RED 画饼 to heal also triggers 十万加
-    mei.flags = {}
+    mei.used = {}
     local ally = g.players[3]; ally.maxHp = 4; ally.hp = 1
     g:usePeachCard(mei, mkCard("画饼", "heart", 3), ally)
-    check("十万加 fired on a red rescue 画饼", mei.flags._viralCount == 1,
-        "viral=" .. tostring(mei.flags._viralCount))
+    check("十万加 fired on a red rescue 画饼", mei.used.viralCount == 1,
+        "viral=" .. tostring(mei.used.viralCount))
 end
 
 ----------------------------------------------------------------------
@@ -364,6 +365,34 @@ do
     check("spy heals 1 on a kill (2 → 3)", killerHpAfter("spy") == 3, "hp=" .. killerHpAfter("spy"))
     check("boss does NOT heal on a kill (stays 2)", killerHpAfter("boss") == 2)
     check("rebel does NOT heal on a kill (stays 2)", killerHpAfter("rebel") == 2)
+end
+
+----------------------------------------------------------------------
+print("[14] 加班-scoped on-attack skills (面议) fire ONLY for a real 加班, not PUA/毕业优化")
+do
+    local g = newGame(4, 19)
+    for _, p in ipairs(g.players) do p.maxHp = 4; p.hp = 4; p.hand = {} end
+    local atk = g.players[1]
+    local seeker = withChar(g, 15, 2)   -- 林简历 求职者; 面议 cancels a 加班 if no 摸鱼 in hand
+    seeker.hp = 4; seeker.hand = {}; seeker.isHuman = false
+    g.current = atk
+    g:resetReactiveBudgets(atk)
+    local realYes = g.askYesNo
+    -- only answer the 面议 prompt 'yes'; other reactive yes/no (e.g. a random 背锅侠 at
+    -- another seat, which correctly fires on ANY damage) keep their AI default.
+    g.askYesNo = function(self, p, prompt, aiDefault)
+        if prompt and prompt:find("面议") then return true end
+        return aiDefault and true or false
+    end
+    -- (a) skill-induced hit with NO card (like PUA option-2 / 毕业优化): must NOT be cancelled
+    g:performAttack(atk, seeker, { amount = 1, dodgeable = false, fromSkill = true })
+    check("PUA/毕业优化-style hit (no card) is NOT cancelled by 面议", seeker.hp == 3, "hp=" .. seeker.hp)
+    -- (b) a real 加班: 面议 still cancels it (remains 加班-scoped)
+    g:resetReactiveBudgets(atk)
+    seeker.hp = 4
+    g:performAttack(atk, seeker, { card = mkCard("加班"), amount = 1, dodgeable = true })
+    g.askYesNo = realYes
+    check("a real 加班 IS still cancelled by 面议", seeker.hp == 4, "hp=" .. seeker.hp)
 end
 
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))

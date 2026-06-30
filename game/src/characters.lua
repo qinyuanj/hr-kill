@@ -426,9 +426,12 @@ C.list = {
         s2 = "追热点：你的回合外失去手牌时，可摸1张牌（简化：受到伤害后摸1张）。",
         skills = {
             onPlayCard = function(game, p, card)
-                p.flags._viralCount = p.flags._viralCount or 0
-                if p.flags._viralCount < 2 and cards.isRed(card) then
-                    p.flags._viralCount = p.flags._viralCount + 1
+                -- 每回合两次：count in `used` (resets every turn for ALL players) rather than
+                -- `flags` (only wiped on the owner's own turn) — 十万加 fires reactively on
+                -- others' turns (摸鱼/救援画饼), so a flags counter would span a whole round.
+                p.used.viralCount = p.used.viralCount or 0
+                if p.used.viralCount < 2 and cards.isRed(card) then
+                    p.used.viralCount = p.used.viralCount + 1
                     game:draw(p, 1, "十万加")
                 end
             end,
@@ -636,7 +639,9 @@ C.list = {
                 end
             end,
             onDeath = function(game, p, source)
-                local t = game:askTarget(p, game:aliveSeatsInOrder(), "【期权激励】令谁摸3张牌？", true)
+                -- a support skill: reward an ally, so hint "ally" (an AI must not hand the
+                -- 3 cards to its worst enemy — the "enemy" default did exactly that).
+                local t = game:askTarget(p, game:aliveSeatsInOrder(), "【期权激励】令谁摸3张牌？", true, "ally")
                 if t then game:draw(t, 3, "期权激励") end
             end,
         },

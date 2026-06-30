@@ -731,17 +731,21 @@ function Engine:performAttack(source, target, opts)
         ignoreArmor = opts.ignoreArmor,
     }
 
-    -- attacker pre-hit skills (e.g. 算法 数据驱动 extra discard, 产品 这个很简单 no-dodge)
-    self:trig(source, "onUseAttack", ctx)
-
-    -- target on-targeted skills (e.g. 后端 这是前端问题 transfer; 求职者 面议 cancel; 摸鱼大师 老板来了 reduce)
-    local r = self:trig(target, "onTargetedByAttack", ctx)
-    if r == "cancel" or ctx.cancelled then
-        self:logmsg("（本次【加班】被无效化）")
-        return false
+    -- 加班-scoped on-attack skills fire ONLY for a real/converted 加班 card. PUA's forced
+    -- hit and 毕业优化 route through performAttack with no card (ctx.card == nil) and must
+    -- NOT trigger 数据驱动/这个很简单 (onUseAttack) or 面议/这是前端问题/老板来了 (onTargetedByAttack).
+    -- (These hooks are all GDD-scoped to '使用/成为【加班】目标时'.)
+    if ctx.card and ctx.card.subtype == "attack" then
+        -- attacker pre-hit skills (数据驱动 extra discard, 这个很简单 no-dodge)
+        self:trig(source, "onUseAttack", ctx)
+        -- target on-targeted skills (这是前端问题 transfer; 面议 cancel; 老板来了 reduce)
+        local r = self:trig(target, "onTargetedByAttack", ctx)
+        if r == "cancel" or ctx.cancelled then
+            self:logmsg("（本次【加班】被无效化）")
+            return false
+        end
+        target = ctx.target   -- a transfer (这是前端问题) may have changed the target
     end
-    -- transfer may have changed ctx.target
-    target = ctx.target
     self:emit({ type = "attack", source = source.id, target = target.id })
     if opts.card and opts.card.subtype == "attack" then
         target.stats.overtimeIn = target.stats.overtimeIn + 1
