@@ -75,6 +75,7 @@ lua test/ui_smoke.lua 9000
 - `test/test_fixes.lua`：68 项断言，锁定历次评审/查错修复的每个 bug。
 - `test/log_scroll.lua`：战报面板按渲染行预算、最新消息不被裁切的回归测试。
 - `ui_smoke.lua`：9000 帧覆盖布局/绘制/输入派发零崩溃。
+- `test/char_winrate.lua`：逐角色胜率分析（技能组强弱，已与身份解耦；纯数据、不改数值）。
 
 ## 代码评审与修复
 
