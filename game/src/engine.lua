@@ -652,6 +652,11 @@ function Engine:killPlayer(target, source)
             self:discardCards(source, all, "错杀嫡系")
             self:discardAllEquip(source)
         end
+        -- GDD §8.4: the 反骨仔 (spy) wins only by outlasting everyone and then soloing the
+        -- boss, so it recovers 1 精神值 on any kill — identity-gated, never helps boss/rebel.
+        if source.identity == "spy" and source.hp < source.maxHp then
+            self:heal(source, 1, "反骨仔·赢家通吃")
+        end
     end
 
     self:checkWin()

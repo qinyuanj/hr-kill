@@ -344,5 +344,27 @@ do
         "before=" .. before .. " after=" .. totalCards(g))
 end
 
+----------------------------------------------------------------------
+print("[13] 反骨仔 recovers 1 精神值 on a kill (GDD §8.4); boss/rebel do not")
+do
+    local function killerHpAfter(identity)
+        local g = newGame(4, 41)
+        for _, p in ipairs(g.players) do
+            p.char = { id = 0, title = "测试", name = "桩", maxHp = 5, skills = {} }
+            p.maxHp = 5; p.hp = 5
+        end
+        local killer, victim = g.players[1], g.players[2]
+        killer.identity = identity
+        killer.hp = 2                       -- below max so a heal is observable
+        victim.identity = "rebel"           -- avoids the boss-kills-loyal penalty path
+        victim.hp = 1
+        g:killPlayer(victim, killer)
+        return killer.hp
+    end
+    check("spy heals 1 on a kill (2 → 3)", killerHpAfter("spy") == 3, "hp=" .. killerHpAfter("spy"))
+    check("boss does NOT heal on a kill (stays 2)", killerHpAfter("boss") == 2)
+    check("rebel does NOT heal on a kill (stays 2)", killerHpAfter("rebel") == 2)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
