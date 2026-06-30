@@ -95,6 +95,11 @@ local function newGame(n)
     G.flash = nil
     G.req = G.game:resume(nil)
     G.aiTimer = 0
+    -- show the role-reveal overlay at the start of every game (pauses AI until
+    -- dismissed). Auto-skip when a harness is driving (autoplay / screenshots),
+    -- unless a screenshot explicitly wants the intro.
+    G.intro = not (_G.AUTOPLAY or SHOT)
+    if SHOT and os.getenv("ZHS_SHOT_KIND") == "intro" then G.intro = true end
 end
 
 -- resume the engine with an answer; capture the next request
@@ -135,7 +140,7 @@ function love.update(dt)
         shotFrame = shotFrame + 1
         local want = os.getenv("ZHS_SHOT_KIND")   -- e.g. "playAction" to show the play UI
         local guard = 0
-        while G.req ~= nil and guard < 50000 do
+        while want ~= "intro" and G.req ~= nil and guard < 50000 do
             local atTarget = isHumanDecision() and (not want or G.req.kind == want)
             if atTarget then break end
             step(AI.answer(G.game, G.req))
@@ -177,6 +182,7 @@ function love.update(dt)
         sound.play(meWin and "win" or "lose", 0.6)
     end
     if G.req == nil then return end             -- game over
+    if G.intro then return end                  -- waiting on the role-reveal overlay
     -- _G.AUTOPLAY lets a test harness drive the human seat with the AI too.
     if not isHumanDecision() or _G.AUTOPLAY then
         G.aiTimer = G.aiTimer + dt
@@ -586,6 +592,43 @@ local function reportVerdict(me)
     return "平平无奇打工人，明天还得接着上 ☕"
 end
 
+-- Role-reveal overlay shown at the start of each game.
+local function drawIntro()
+    if not G.intro then return end
+    local w, h = G.L.w, G.L.h
+    local me = humanPlayer()
+    theme.setColor({ 0, 0, 0 }, 0.8)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local idCol = theme.identityColor(me.identity)
+    theme.printf("本局你的身份", theme.fonts.normal, theme.colors.textDim, 0, h * 0.18, w, "center")
+    theme.printf("【" .. theme.identityCN[me.identity] .. "】", theme.fonts.huge, idCol, 0, h * 0.18 + 30, w, "center")
+    local goal = ({
+        boss  = "目标：清除所有摸鱼党与反骨仔",
+        loyal = "目标：辅佐老板，与其共同获胜",
+        rebel = "目标：让老板毕业（精神值归零）",
+        spy   = "目标：除你外全员阵亡，最后亲手击杀老板",
+    })[me.identity]
+    theme.printf(goal or "", theme.fonts.normal, theme.colors.text, 0, h * 0.18 + 92, w, "center")
+
+    -- character card
+    local bw, bh = 460, 150
+    local bx, by = (w - bw) / 2, h * 0.42
+    theme.setColor({ 0.10, 0.11, 0.15 }, 0.96)
+    theme.rrect("fill", bx, by, bw, bh, 10)
+    theme.setColor(idCol, 0.6)
+    love.graphics.setLineWidth(1.5)
+    theme.rrect("line", bx, by, bw, bh, 10)
+    love.graphics.setLineWidth(1)
+    theme.printf(string.format("你的角色：%s · %s    精神值 %d", me.char.title, me.char.name, me.maxHp),
+        theme.fonts.mid, theme.colors.accent, bx, by + 14, bw, "center")
+    theme.printf(me.char.s1 or "", theme.fonts.small, theme.colors.text, bx + 18, by + 52, bw - 36, "left")
+    theme.printf(me.char.s2 or "", theme.fonts.small, theme.colors.text, bx + 18, by + 96, bw - 36, "left")
+
+    theme.printf("点击任意处 / 按任意键 开始", theme.fonts.normal, theme.colors.good,
+        0, by + bh + 24, w, "center")
+end
+
 local function drawGameOver()
     if G.req ~= nil or not G.game.winner then return end
     local w, h = G.L.w, G.L.h
@@ -832,6 +875,7 @@ function love.draw()
 
     drawHoverTooltip()
     drawGameOver()
+    drawIntro()
     drawHelp()
 
     -- hint bottom-left
@@ -894,6 +938,7 @@ end
 
 function love.mousepressed(mx, my, button)
     if button ~= 1 or not G.game then return end
+    if G.intro then G.intro = false; return end   -- dismiss role-reveal overlay
     layout()
 
     -- buttons first (includes the card-conversion menu options)
@@ -949,6 +994,10 @@ function love.wheelmoved(_, dy)
 end
 
 function love.keypressed(key)
+    if G.intro then
+        if key == "escape" then love.event.quit() else G.intro = false end
+        return
+    end
     if key == "h" then G.help = not G.help
     elseif key == "r" then newGame(G.numPlayers)
     elseif key == "m" then
