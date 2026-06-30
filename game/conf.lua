@@ -9,7 +9,9 @@ function love.conf(t)
     t.window.minheight = 680
     t.window.resizable = true
     t.window.highdpi = true
-    t.window.vsync = 1
+    -- vsync blocks frame present when the display is asleep/headless, which stalls
+    -- screenshot captures. Disable it for --shot runs (set ZHS_SHOT=1).
+    t.window.vsync = os.getenv("ZHS_SHOT") and 0 or 1
     t.modules.joystick = false
     t.modules.physics = false
 end

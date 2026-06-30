@@ -10,6 +10,16 @@ local Chars  = require("src.characters")
 local cards  = require("src.cards")
 local theme  = require("src.theme")
 
+-- Surface runtime crashes to stderr (the default LÖVE error screen is graphical and
+-- prints nothing, which makes headless screenshot/debug runs impossible to diagnose).
+function love.errorhandler(msg)
+    io.stderr:write("\n=== LÖVE runtime error ===\n" .. tostring(msg) .. "\n"
+        .. debug.traceback("", 2) .. "\n")
+    if os.getenv("ZHS_SHOT") or os.getenv("ZHS_SHOT_KIND") then os.exit(1) end
+    -- interactive: fall back to LÖVE's built-in error screen
+    return love.errhand and love.errhand(msg)
+end
+
 local G = {
     game = nil,
     req = nil,            -- current pending request from the engine
@@ -109,14 +119,20 @@ function love.update(dt)
     if not G.game then return end
 
     if SHOT and not shotDone then
-        -- drive AI (and optionally the human) until we reach the target frame to capture
+        -- Fast-forward the whole game in one update: step every decision (the AI even
+        -- answers the human seat) until we reach the wanted human request, or the game
+        -- ends. This reaches any capture state in a couple of frames regardless of how
+        -- long the game runs, so screenshots are quick and reliable.
         shotFrame = shotFrame + 1
         local want = os.getenv("ZHS_SHOT_KIND")   -- e.g. "playAction" to show the play UI
-        local atTarget = isHumanDecision() and (not want or G.req.kind == want)
-        if G.req and not atTarget then
+        local guard = 0
+        while G.req ~= nil and guard < 50000 do
+            local atTarget = isHumanDecision() and (not want or G.req.kind == want)
+            if atTarget then break end
             step(AI.answer(G.game, G.req))
+            guard = guard + 1
         end
-        if (atTarget and shotFrame > 30) or shotFrame > 6000 or G.req == nil then
+        if shotFrame > 2 then
             shotDone = true
             -- demo: inject full-strength effects so screenshots can verify their rendering
             if os.getenv("ZHS_SHOT_DEMO") then
@@ -511,9 +527,16 @@ local function drawHand()
             drawCardFace(c, r.x, r.y, r.w, r.h, { selected = selected, candidate = candidate, dim = dim })
         end
     end
-    -- my identity reminder
+    -- my identity + win-condition reminder
     theme.print("你的身份：" .. theme.identityCN[me.identity], theme.fonts.small,
-        theme.identityColor(me.identity), 16, G.L.h - 150)
+        theme.identityColor(me.identity), 16, G.L.h - 168)
+    local goal = ({
+        boss  = "目标：清除所有摸鱼党与反骨仔",
+        loyal = "目标：辅佐老板，共同获胜",
+        rebel = "目标：让老板毕业（精神值归零）",
+        spy   = "目标：除你外全员阵亡，最后击杀老板",
+    })[me.identity]
+    if goal then theme.print(goal, theme.fonts.tiny, theme.colors.textDim, 16, G.L.h - 150) end
 end
 
 -- a tongue-in-cheek one-line verdict from the human's play pattern (GDD §8.4 flavor)
@@ -597,6 +620,7 @@ local function drawHelp()
         "  · 老板+嫡系：消灭所有摸鱼党与反骨仔",
         "  · 摸鱼党：让老板毕业(精神值归零)",
         "  · 反骨仔：先除掉其他所有人，最后单挑老板",
+        "  · 老板享主公技：体力补偿，且劣势人数局每回合多摸1张牌",
         "",
         "基本牌：加班(杀) / 摸鱼(闪) / 画饼(桃) / 卷一下(酒)",
         "回合：判定 → 摸2张 → 出牌 → 弃牌(至精神值) → 结束",
@@ -605,9 +629,10 @@ local function drawHelp()
         "操作：点手牌出牌；需要目标时点亮的玩家；",
         "      「技·」按钮发动主动技；「结束回合」结束出牌。",
         "      被加班时点【摸鱼】响应，或点取消承受伤害。",
-        "顶部：人数 可切换 4–8 人重开。",
+        "      悬停手牌/玩家可查看牌效果与角色技能。",
+        "顶部：人数 可切换 4–8 人重开。局终生成「职场报告」。",
     }
-    local y = h * 0.12
+    local y = h * 0.10
     for _, ln in ipairs(lines) do
         theme.printf(ln, theme.fonts.normal, theme.colors.text, w * 0.18, y, w * 0.64, "left")
         y = y + 28
@@ -747,9 +772,15 @@ function love.draw()
     love.graphics.ellipse("fill", G.L.cx, G.L.cy, G.L.rx + 40, G.L.ry + 40)
     theme.setColor(theme.colors.panel)
     love.graphics.ellipse("line", G.L.cx, G.L.cy, G.L.rx + 40, G.L.ry + 40)
-    -- deck / discard info in center
-    theme.printf(string.format("牌堆 %d  弃牌 %d", #G.game.deck, #G.game.discard),
-        theme.fonts.small, theme.colors.textDim, G.L.cx - 100, G.L.cy - 8, 200, "center")
+    -- center: the most recent card to hit the discard pile (what was just played),
+    -- with deck/discard counts underneath.
+    local top = G.game.discard[#G.game.discard]
+    if top then
+        local cw, ch = 66, 90
+        drawCardFace(top, G.L.cx - cw / 2, G.L.cy - ch - 6, cw, ch, {})
+    end
+    theme.printf(string.format("牌堆 %d   弃牌 %d", #G.game.deck, #G.game.discard),
+        theme.fonts.small, theme.colors.textDim, G.L.cx - 100, G.L.cy + 6, 200, "center")
 
     for _, p in ipairs(G.game.players) do drawPlayer(p) end
     drawAnims()
