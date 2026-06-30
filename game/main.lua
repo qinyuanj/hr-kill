@@ -508,24 +508,47 @@ local function drawLog()
     local lineH = font:getHeight() + 4
     local areaY = 76
     local areaH = h - areaY - 12
-    local maxLines = math.floor(areaH / lineH)
+    if areaH <= 0 then G.logMaxScroll = 0; return end   -- tiny/headless surface: nothing to draw
+    local wrapW = G.L.logW - pad * 2
+    local maxRows = math.max(1, math.floor(areaH / lineH))
     local log = G.game.log
     local total = #log
-    G.logMaxScroll = math.max(0, total - maxLines)   -- for the wheel clamp
-    local startI = math.max(1, total - maxLines + 1 - G.logScroll)
-    local endI = math.min(total, startI + maxLines - 1)
-    local yy = areaY
+
+    -- Budget by RENDERED rows, not entries: long CJK report lines wrap to 2+ rows, so an
+    -- entry-counted window overflows the panel and clips the newest lines. Measure each
+    -- entry's wrapped row count, then show a bottom-anchored window (scroll 0 = newest).
+    local rows, totalRows = {}, 0
+    for i = 1, total do
+        local _, wrapped = font:getWrap(log[i], wrapW)
+        rows[i] = math.max(1, #wrapped)
+        totalRows = totalRows + rows[i]
+    end
+    -- G.logScroll counts rows scrolled UP from the newest; clamp to the real overflow.
+    local maxScroll = math.max(0, totalRows - maxRows)
+    G.logMaxScroll = maxScroll
+    local scroll = math.max(0, math.min(G.logScroll or 0, maxScroll))
+
+    -- Top visible global row; locate its entry and how many of that entry's rows sit above
+    -- the viewport (rendered at a negative offset and clipped by the scissor).
+    local topRow = math.max(1, totalRows - scroll - maxRows + 1)
+    local acc, startI, skipRows = 0, total + 1, 0
+    for i = 1, total do
+        if acc + rows[i] >= topRow then startI = i; skipRows = topRow - acc - 1; break end
+        acc = acc + rows[i]
+    end
+
     love.graphics.setScissor(x, areaY, G.L.logW, areaH)
-    for i = startI, endI do
+    local yy = areaY - skipRows * lineH
+    for i = startI, total do
         local line = log[i]
         local col = theme.colors.text
         if line:find("阵亡") or line:find("濒死") then col = theme.colors.bad
         elseif line:find("回合 ────") or line:find("回合：") then col = theme.colors.accent
         elseif line:find("游戏结束") then col = theme.colors.good
         elseif line:find("回复") then col = theme.colors.good end
-        theme.printf(line, font, col, x + pad, yy, G.L.logW - pad * 2, "left")
-        local _, wrapped = font:getWrap(line, G.L.logW - pad * 2)
-        yy = yy + math.max(1, #wrapped) * lineH
+        theme.printf(line, font, col, x + pad, yy, wrapW, "left")
+        yy = yy + rows[i] * lineH
+        if yy >= areaY + areaH then break end   -- viewport filled
     end
     love.graphics.setScissor()
 end

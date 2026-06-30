@@ -144,10 +144,18 @@ deficit ≥ 2 给「多摸 1 张」，单嫡系 deficit = 1（5 人桌）在体�
   将原本仅 5 人桌（deficit=1 且单嫡系）享有的「+1HP 代替多摸」泛化为**所有 deficit=1 桌**——
   7 人桌因此 +1HP（→+2HP）回到 ~49–50%，其余人数不变（5p 本就覆盖，余者 deficit≠1）。
 
+### 第四轮查错：支撑代码（theme/util/cards/sound + main 绘制）
+
+- **战报面板裁切最新消息**：`drawLog` 按**条数**估算可视窗口，却按**换行后的行高**渲染。中文战报
+  常换行成 2–3 行，于是窗口高度溢出面板，**最新的战报被 scissor 裁在底部之外、且无法滚动看到**。
+  改为按**渲染行**预算：逐条测量换行行数、底部对齐（滚动量=0 时最新行贴底）、顶/底残行由 scissor
+  干净裁切，滚动夹取按真实行数；并加 `areaH<=0` 早退（顺带消除窗口高度过小时 `setScissor` 负高度的
+  隐患）。新增回归测试 `test/log_scroll.lua`（用会换行的字体桩，断言最新行落在面板内；对旧代码会失败）。
+
 ## 测试
 
-- `lua test/test_fixes.lua` 40 项断言全过（含护甲转移、刘重启身份决策、十万加 闪/桃、
-  AI 背锅濒死转移、反骨仔击杀回血 等回归）。
-- `lua headless.lua 300 6 1` 零报错、卡牌守恒不变式成立。
-- `lua test/ui_smoke.lua` UI 代码路径零崩溃。
-- `lua test/balance.lua 400` 平衡性回归。
+- `lua test/test_fixes.lua` 60 项断言全过（规则正确性 + 历次查错/评审回归）。
+- `lua test/log_scroll.lua` 战报按行预算、最新行不被裁切的回归测试。
+- `lua headless.lua 1500 <人数> <seed>` 7500 局零报错、零超时、卡牌守恒不变式全程成立。
+- `lua test/ui_smoke.lua 9000` UI 代码路径（布局/绘制/输入派发）零崩溃。
+- `lua test/balance.lua 500 <seed>` 平衡性回归（各人数 44–51%、总体 ~47%）。

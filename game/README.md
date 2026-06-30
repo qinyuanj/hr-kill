@@ -73,6 +73,7 @@ lua test/ui_smoke.lua 9000
 
 - `headless.lua`：1000+ 局（4–8 人）零报错、自然分胜负，且**卡牌守恒不变式全程成立**。
 - `test/test_fixes.lua`：60 项断言，锁定历次评审/查错修复的每个 bug。
+- `test/log_scroll.lua`：战报面板按渲染行预算、最新消息不被裁切的回归测试。
 - `ui_smoke.lua`：9000 帧覆盖布局/绘制/输入派发零崩溃。
 
 ## 代码评审与修复
