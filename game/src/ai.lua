@@ -204,6 +204,10 @@ local function planAction(game, me)
                 useful = (me.hp < me.maxHp and #me.hand > 0)
             elseif sk.id == "teatime" then
                 useful = (me.hp < me.maxHp)
+            elseif sk.id == "review" then
+                -- 人才盘点 only reveals a hidden identity; the no-peek AI never acts on
+                -- revealed identities, so firing it is pure waste — skip it.
+                useful = false
             end
             if useful then
                 ai.usedAdvActive = true
