@@ -194,7 +194,7 @@ local function planAction(game, me)
         for _, sk in ipairs(game:listActiveSkills(me)) do
             local useful = true
             -- gate skills that need a valid victim/target
-            if sk.id == "reqChanged" or sk.id == "reportBug" or sk.id == "interview" or sk.id == "swap" then
+            if sk.id == "reqChanged" or sk.id == "reportBug" or sk.id == "swap" then
                 local any = false
                 for _, q in ipairs(game:aliveSeatsInOrder()) do
                     if q.id ~= me.id and #q.hand > 0 then any = true break end
@@ -204,9 +204,10 @@ local function planAction(game, me)
                 useful = (me.hp < me.maxHp and #me.hand > 0)
             elseif sk.id == "teatime" then
                 useful = (me.hp < me.maxHp)
-            elseif sk.id == "review" then
-                -- 人才盘点 only reveals a hidden identity; the no-peek AI never acts on
-                -- revealed identities, so firing it is pure waste — skip it.
+            elseif sk.id == "review" or sk.id == "interview" then
+                -- Pure-information actives: 人才盘点 reveals a hidden identity, 考察一下 reveals
+                -- a random hand card. The no-peek AI never acts on either, so firing them just
+                -- wastes the turn's active — skip them.
                 useful = false
             end
             if useful then
