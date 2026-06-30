@@ -751,5 +751,23 @@ do
     check("BLACK judgment: the source keeps both cards", #src2.hand == 2, "src2.hand=" .. #src2.hand)
 end
 
+print("[32] 流量变现 (朱变现): hands a card to another player then redraws — moved, not duplicated")
+do
+    local g = neutralGame(71, { "boss", "loyal", "rebel", "spy" })
+    local zhu = withChar(g, 21, 1); zhu.identity = "rebel"
+    local give = mkCard("加班", "spade")
+    zhu.hand = { give }                        -- the single card it will hand off
+    local recip = g.players[2]; recip.hand = {}
+    g.deck = { mkCard("摸鱼", "heart") }        -- the deterministic replacement draw
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("流量变现") ~= nil end
+    g.askTarget = function(_, _, _, prompt) if prompt and prompt:find("交给谁") then return recip end end
+    g.askCard = function(_, _, cands) return cands[1] end
+    g:trig(zhu, "afterDraw")
+    check("the recipient receives exactly the handed-off card", #recip.hand == 1 and recip.hand[1] == give,
+        "recip.hand=" .. #recip.hand)
+    check("朱变现 redraws 1 to replace it (net hand size unchanged)", #zhu.hand == 1, "zhu.hand=" .. #zhu.hand)
+    check("the card moved (not duplicated): 朱变现 no longer holds it", zhu.hand[1] ~= give)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
