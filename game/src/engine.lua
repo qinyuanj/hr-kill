@@ -706,7 +706,7 @@ function Engine:tryDodge(target, ctx)
     if #dodges == 0 then return false end
     local prompt = string.format("%s 对你使用【%s】，打出【摸鱼】抵消？",
         ctx.source and ctx.source.name or "某人", ctx.card and ctx.card.name or "加班")
-    local c = self:askCard(target, dodges, prompt, true)
+    local c = self:askCard(target, dodges, prompt, true, "dodge")
     if not c then return false end
     self:removeFromHand(target, c)
     self:toDiscard(c)

@@ -395,5 +395,21 @@ do
     check("a real 加班 IS still cancelled by 面议", seeker.hp == 4, "hp=" .. seeker.hp)
 end
 
+----------------------------------------------------------------------
+print("[15] tryDodge tags the chooseCard request hint='dodge' (AI dodge logic is live, not dead)")
+do
+    local g = newGame(4, 7)
+    local atk, tgt = g.players[1], g.players[2]
+    tgt.hand = { mkCard("摸鱼", "heart", 5) }
+    local seenHint = "<unset>"
+    local realAsk = g.askCard
+    g.askCard = function(self, p, cands, prompt, optional, hint) seenHint = hint; return nil end
+    g:tryDodge(tgt, { dodgeable = true, source = atk, card = mkCard("加班") })
+    g.askCard = realAsk
+    -- without this hint the request defaulted to "discard" and ai.decideCard's probabilistic
+    -- dodge branch was unreachable -> the AI dodged 100% of every non-lethal hit.
+    check("tryDodge passes hint='dodge'", seenHint == "dodge", "hint=" .. tostring(seenHint))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
