@@ -250,7 +250,13 @@ local function planAction(game, me)
     end
 
     -- 6) offensive / disruptive tricks
-    local function useTrickOn(name, hint)
+    -- `damaging` = this trick deals certain damage to the chosen victim (毕业优化). Such
+    -- tricks get the full 加班-style safeguard: a boss must only hit players who have
+    -- already threatened it, else it may finish off a hidden loyalist. Non-damage
+    -- disruption tricks (日报周报 steal / PUA discard / 试用期考核 delayed judgment) carry
+    -- little own-goal risk, so the boss still plays them on its best non-boss enemy
+    -- rather than forfeiting the card until first blood.
+    local function useTrickOn(name, hint, damaging)
         local c = firstPlayable(game, me, name)
         if not c then return nil end
         local tg = game:validTargets(me, c)
@@ -258,10 +264,7 @@ local function planAction(game, me)
             -- aoe/self trick: just use it
             return { type = "playCard", cardId = c.id, targetIds = {} }
         end
-        -- Single-target tricks reachable here (毕业优化/PUA/试用期考核/日报周报) are all
-        -- offensive, so apply the SAME safeguards as 加班 targeting (chooseAttackTarget):
-        -- a boss-aligned AI must never aim them at its own (public) boss, and the boss
-        -- only strikes players who have already threatened it — otherwise it own-goals.
+        -- A boss-aligned AI must never aim ANY offensive trick at its own (public) boss.
         local bossId = game:bossPlayer().id
         local safe = {}
         for _, p in ipairs(tg) do
@@ -269,7 +272,7 @@ local function planAction(game, me)
                 safe[#safe + 1] = p
             end
         end
-        if me.identity == "boss" then
+        if damaging and me.identity == "boss" then
             local threats = {}
             for _, p in ipairs(safe) do
                 if (game.threat and game.threat[p.id] or 0) > 0 then threats[#threats + 1] = p end
@@ -283,7 +286,7 @@ local function planAction(game, me)
     end
 
     if not ai.t_grad then ai.t_grad = true
-        local a = useTrickOn("毕业优化"); if a then return a end
+        local a = useTrickOn("毕业优化", nil, true); if a then return a end
     end
     if not ai.t_pua then ai.t_pua = true
         local a = useTrickOn("PUA"); if a then return a end

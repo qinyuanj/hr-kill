@@ -99,18 +99,18 @@ function Engine:setup(opts)
         --     own-goals), so the cushion is one less than it once needed.
         --   • a per-turn extra draw for the most lop-sided tables (deficit ≥ 2);
         --     HP alone just makes those grind, card advantage is what wins them.
-        -- The single-loyalist deficit-1 table (5p) would be over-buffed by a per-turn
-        -- draw, so it instead gets +1 HP.
+        -- The deficit-1 tables (5p, 7p) would be over-buffed by a per-turn draw, so they
+        -- instead get +1 HP — empirically the lowest-winning tables otherwise.
         -- At 4p the boss is NOT out-numbered (deficit 0): it gets no cushion and opens a
         -- card short, while the lone 摸鱼党 — the role the boss-team's coordination crushes
         -- there — gets +1 HP to push back toward ~50%.
         -- NET per table ─ 4p: boss +0HP/−1 card, rebel +1HP · 5p: +1HP · 6p: +1HP & +1 draw ·
-        --                 7p: +1HP · 8p: +2HP & +1 draw.
+        --                 7p: +2HP · 8p: +2HP & +1 draw.
         local hpBonus, bossDrawBonus = 0, 0
         if ids[seat] == "boss" then
             hpBonus = math.max(0, cfg.rebel - 2)
             bossDrawBonus = (bossDeficit >= 2) and 1 or 0
-            if bossDeficit == 1 and cfg.loyal == 1 then hpBonus = hpBonus + 1 end
+            if bossDeficit == 1 then hpBonus = hpBonus + 1 end
             local override = tonumber(os.getenv("ZHS_BOSS_BONUS"))
             if override then hpBonus = override end
         elseif ids[seat] == "rebel" and bossDeficit <= 0 then

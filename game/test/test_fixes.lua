@@ -516,5 +516,47 @@ do
         "type=" .. tostring(action and action.type) .. " tgt=" .. tostring(action and action.targetIds and action.targetIds[1]))
 end
 
+print("[21] boss AI plays non-damage disruption tricks pre-'first blood', but gates damage tricks")
+do
+    local AI = require("src.ai")
+    local g = newGame(6, 71)
+    local boss, victim
+    for _, p in ipairs(g.players) do if p.identity == "boss" then boss = p end end
+    for _, p in ipairs(g.players) do if p.id ~= boss.id then victim = p break end end
+    for _, p in ipairs(g.players) do p.hp = 3; p.maxHp = 3 end
+    boss.isHuman = false
+    g.current = boss
+
+    -- (a) 日报周报 (steal/discard, NO damage) — boss plays it on a non-boss enemy even
+    --     though nobody has damaged it yet (game.threat empty).
+    g.threat = {}
+    boss.flags._ai = { usedAdvActive = true }
+    boss.hand = { mkCard("日报周报") }
+    local a = AI.answer(g, { kind = "playAction", player = boss })
+    local playedDisrupt = a and a.type == "playCard" and a.targetIds and a.targetIds[1]
+        and a.targetIds[1] ~= boss.id
+    check("boss plays 日报周报 without first blood (non-damage disruption)", playedDisrupt,
+        "type=" .. tostring(a and a.type) .. " tgt=" .. tostring(a and a.targetIds and a.targetIds[1]))
+
+    -- (b) 毕业优化 (certain 2 damage) with NO recorded threat — gated, lest the boss finish
+    --     a hidden loyalist.
+    g.threat = {}
+    boss.flags._ai = { usedAdvActive = true }
+    victim.hp = 1                                 -- the only legal 毕业优化 target (hp<=1)
+    boss.hand = { mkCard("毕业优化") }
+    local b = AI.answer(g, { kind = "playAction", player = boss })
+    check("boss does NOT 毕业优化 a non-threat target (damage gated)", not (b and b.type == "playCard"),
+        "type=" .. tostring(b and b.type))
+
+    -- (c) same 毕业优化 once the victim HAS threatened the boss — now allowed.
+    g.threat = { [victim.id] = 1 }
+    boss.flags._ai = { usedAdvActive = true }
+    boss.hand = { mkCard("毕业优化") }
+    local cc = AI.answer(g, { kind = "playAction", player = boss })
+    local hitVictim = cc and cc.type == "playCard" and cc.targetIds and cc.targetIds[1] == victim.id
+    check("boss DOES 毕业优化 a victim that threatened it", hitVictim,
+        "type=" .. tostring(cc and cc.type) .. " tgt=" .. tostring(cc and cc.targetIds and cc.targetIds[1]))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
