@@ -101,6 +101,17 @@ local function firstPlayable(game, player, name)
     return nil
 end
 
+-- A hand card this character can play AS `asName` via a convert skill (老板 装备→加班,
+-- 楚抓手 OKR对齐→升职加薪), and that is legal right now. Returns the real card or nil.
+local function firstConvertible(game, player, asName)
+    for _, c in ipairs(player.hand) do
+        for _, opt in ipairs(game:convertOptions(player, c)) do
+            if opt == asName and game:canPlayConverted(player, c, asName) then return c end
+        end
+    end
+    return nil
+end
+
 -- pick an attack target among reachable enemies, respecting identity strategy
 local function chooseAttackTarget(game, me)
     local bossId = game:bossPlayer().id
@@ -198,9 +209,11 @@ local function planAction(game, me)
         ai.usedAdvActive = true
     end
 
-    -- 4) 升职加薪 (pure card advantage)
+    -- 4) 升职加薪 (pure card advantage) — natively, or 楚抓手 OKR对齐→升职加薪
     local promo = firstPlayable(game, me, "升职加薪")
     if promo then return { type = "playCard", cardId = promo.id, targetIds = {} } end
+    local promoConv = firstConvertible(game, me, "升职加薪")
+    if promoConv then return { type = "playCard", cardId = promoConv.id, targetIds = {}, as = "升职加薪" } end
 
     -- 5) wine + attack burst on a killable target
     local atk = firstPlayable(game, me, "加班")
@@ -214,6 +227,17 @@ local function planAction(game, me)
                 return { type = "playCard", cardId = wine.id, targetIds = { me.id } }
             end
             return { type = "playCard", cardId = atk.id, targetIds = { t.id } }
+        end
+    end
+
+    -- 5b) 老板 狼性文化: turn a spare equipment card into an extra 加班. Any equipment
+    -- still in hand here was already passed over for equipping (a downgrade/duplicate),
+    -- so spending it as an attack is free value.
+    if game:attacksLeft(me) > 0 then
+        local conv = firstConvertible(game, me, "加班")
+        if conv then
+            local t = chooseAttackTarget(game, me)
+            if t then return { type = "playCard", cardId = conv.id, targetIds = { t.id }, as = "加班" } end
         end
     end
 
