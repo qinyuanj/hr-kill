@@ -319,7 +319,7 @@ local function decideCard(game, req)
         -- reliably read is the (public) boss, so boss-aligned players spend a peach
         -- to keep the boss alive — this is game-critical for the boss team. A loyalist
         -- with spare peaches also covers a teammate it has positively identified.
-        local dying = req.dyingId and game.players[req.dyingId]
+        local dying = req.dyingId and game:playerById(req.dyingId)
         if not dying then return nil end
         local saveBoss = (player.identity == "loyal" or player.identity == "boss")
             and dying.identity == "boss"
@@ -347,7 +347,7 @@ function AI.answer(game, req)
     elseif req.kind == "chooseCard" then
         return decideCard(game, req)
     elseif req.kind == "chooseTarget" then
-        local cands = util.map(req.candidates, function(id) return game.players[id] end)
+        local cands = util.map(req.candidates, function(id) return game:playerById(id) end)
         local t = bestTarget(game, req.player, cands, req.hint or "enemy")
         if req.optional and not t then return nil end
         return t and t.id or (req.optional and nil or req.candidates[1])

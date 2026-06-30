@@ -465,5 +465,35 @@ do
     check("treasure is once-per-turn", #g:peachOptions(p) == 0, "n2=" .. #g:peachOptions(p))
 end
 
+----------------------------------------------------------------------
+print("[19] 空降高管 seat rotation: ids stay stable; id-resolution targets the right player")
+do
+    local g = newGame(5, 41)
+    for _, p in ipairs(g.players) do p.hand = {} end
+    local user = g.players[1]
+    user.hand = { mkCard("空降高管") }
+    g.current = user
+    g:playCard(user, user.hand[1], {})      -- rotate every seat by one (a 5-cycle: all move)
+    local diverged
+    for _, p in ipairs(g.players) do if p.alive and p.id ~= p.seat then diverged = p break end end
+    check("rotation made id != seat for someone", diverged ~= nil)
+    if diverged then
+        -- playerById resolves by STABLE id (object identity), not by the seat slot
+        check("playerById(id) returns the id-holder", g:playerById(diverged.id) == diverged)
+        -- the seat-indexed slot at that id is now a DIFFERENT player (the bug this fixes)
+        check("players[id] is the WRONG player post-rotation", g.players[diverged.id] ~= diverged)
+        -- end-to-end: an 加班 aimed at diverged.id resolves to diverged, not players[diverged.id]
+        local wrong = g.players[diverged.id]
+        diverged.hp = 4; diverged.maxHp = 4; diverged.equip = diverged.equip or {}
+        wrong.hp = 4; wrong.maxHp = 4
+        diverged.hand = {}; wrong.hand = {}     -- no 摸鱼 to dodge
+        local atk = g:playerById(user.id)
+        g.current = atk
+        g:performAttack(atk, g:playerById(diverged.id), { card = mkCard("加班"), amount = 1, dodgeable = true })
+        check("加班 hit the id-holder, not the seat-occupant", diverged.hp == 3 and wrong.hp == 4,
+            "diverged=" .. diverged.hp .. " wrong=" .. wrong.hp)
+    end
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

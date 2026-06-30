@@ -98,6 +98,17 @@ deficit ≥ 2 给「多摸 1 张」，单嫡系 deficit = 1（5 人桌）在体�
   把**任意手牌**纳入【画饼】候选，`usePeachCard` 据此消耗每回合一次配额。覆盖该宝物最关键的用途：
   濒死自救与救援队友（AI 与人类共用濒死询问流程）。实测对总体平衡影响很小（≈+1%）。
 
+### 第三轮查错：主攻 UI（main.lua）与 AI（ai.lua）
+
+- **【空降高管】换座后「按 id 索引」全线失灵（系统性）**：座位轮换 `game.players[seat]=p` 重排了
+  数组却不改 `p.id`，于是换座后 `id != seat`，而引擎/AI/UI 多处把**玩家 id 当数组下标**去
+  `players[id]` 取人——换座后全部取到**错误的玩家**。后果：人类点击的目标/出牌被解析到错误玩家；
+  AI 选择目标、判断濒死救援对象时也指向错误玩家。因不崩溃、卡牌仍守恒，headless 一直没发现。
+  新增 `Engine:playerById(id)`（按稳定 id 线性查找），并修正全部 5 处 id→玩家 解析点
+  （`askTarget` 返回、`playCard`/`playConverted` 的 targetIds、AI 的 chooseTarget 与 allySave）。
+  座位迭代（回合顺序、`bossPlayer`）本就一致使用 seat，不受影响；`humanPlayer` 早已按 `isHuman`
+  对象查找。回归测试 [19] 复现换座后 `id != seat` 并验证按 id 解析命中正确玩家。
+
 ## 测试
 
 - `lua test/test_fixes.lua` 40 项断言全过（含护甲转移、刘重启身份决策、十万加 闪/桃、

@@ -168,6 +168,16 @@ function Engine:bossPlayer()
     return self.players[self:findBossSeat()]
 end
 
+-- Resolve a player by their STABLE id. After 空降高管 rotates seats, self.players is
+-- re-keyed by seat while ids stay fixed, so id != seat — never index self.players by an
+-- id. All request answers / targetIds / dyingId are ids, so they MUST go through here.
+function Engine:playerById(id)
+    for _, p in ipairs(self.players) do
+        if p.id == id then return p end
+    end
+    return nil
+end
+
 ----------------------------------------------------------------------
 -- Coroutine driver interface
 ----------------------------------------------------------------------
@@ -414,7 +424,7 @@ function Engine:askTarget(player, candidates, prompt, optional, hint)
         prompt = prompt, optional = optional == true, hint = hint or "enemy",
     })
     if ans == nil then return nil end
-    return self.players[ans]
+    return self:playerById(ans)
 end
 
 -- Ask a player to choose among string options. Returns 1-based index.
@@ -1115,7 +1125,7 @@ end
 function Engine:playConverted(user, realCard, asName, targetIds)
     local virt = self:effectiveCard(realCard, asName)
     if not virt then return end
-    local targets = util.map(targetIds or {}, function(id) return self.players[id] end)
+    local targets = util.map(targetIds or {}, function(id) return self:playerById(id) end)
     self:removeFromHand(user, realCard)
     self:toDiscard(realCard)
     self:logmsg("%s 将 %s 当作【%s】使用", user.name, cards.label(realCard), asName)
@@ -1172,7 +1182,7 @@ end
 -- action: { cardId, targetIds }
 function Engine:playCard(user, card, targetIds)
     targetIds = targetIds or {}
-    local targets = util.map(targetIds, function(id) return self.players[id] end)
+    local targets = util.map(targetIds, function(id) return self:playerById(id) end)
 
     if card.type == "equip" then
         self:equipCard(user, card)
