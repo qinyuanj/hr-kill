@@ -702,5 +702,32 @@ do
     check("郑信仰 paid 1 精神值 for the compensation", zheng.hp == 2, "zheng.hp=" .. zheng.hp)
 end
 
+print("[29] 兼容IE (王兼容): a BLACK hand card can be played as 摸鱼 to dodge a 加班")
+do
+    local g = neutralGame(51, { "boss", "loyal", "rebel", "spy" })
+    local wang = withChar(g, 3, 1)             -- 王兼容
+    wang.identity = "rebel"; wang.hp = 3
+    wang.hand = { mkCard("加班", "spade") }     -- a BLACK card, NOT a 摸鱼
+    local src = g.players[3]
+    g.current = src; g:resetReactiveBudgets(src)
+    g.askCard = function(_, _, cands, prompt) if prompt and prompt:find("抵消") then return cands[1] end end
+    g:performAttack(src, wang, { card = mkCard("加班"), amount = 1, dodgeable = true })
+    check("王兼容 takes no damage (black card dodged the 加班)", wang.hp == 3, "wang.hp=" .. wang.hp)
+    check("the black card was spent as 摸鱼", #wang.hand == 0)
+end
+
+print("[30] 下月打款 (吴报销): a RED hand card can be played as 画饼 to self-rescue from dying")
+do
+    local g = neutralGame(53, { "boss", "loyal", "rebel", "spy" })
+    local wu = withChar(g, 9, 1)               -- 吴报销 (财务)
+    wu.identity = "loyal"; wu.hp = 1
+    wu.hand = { mkCard("加班", "heart") }       -- a RED card, NOT a 画饼
+    g.askCard = function(_, _, cands, _, _, hint) if hint == "selfSave" then return cands[1] end end
+    g:dealDamage({ target = wu, source = g.players[3], amount = 1, card = mkCard("加班") })
+    check("吴报销 survives dying by using a red card as 画饼", wu.alive and wu.hp == 1,
+        "alive=" .. tostring(wu.alive) .. " hp=" .. wu.hp)
+    check("the red card was spent as 画饼", #wu.hand == 0)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
