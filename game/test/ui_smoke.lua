@@ -24,6 +24,7 @@ _G.love = {
         getHeight = function() return H end,
         setBackgroundColor = noop, setColor = noop, setFont = noop, setLineWidth = noop,
         rectangle = noop, line = noop, circle = noop, ellipse = noop, print = noop,
+        polygon = noop, arc = noop, points = noop,
         printf = noop, setScissor = noop, newFont = newFont,
     },
     filesystem = {

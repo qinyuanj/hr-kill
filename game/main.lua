@@ -439,9 +439,18 @@ local function drawPlayer(p)
     theme.rrect("line", r.x, r.y, r.w, r.h, 8)
     love.graphics.setLineWidth(1)
 
-    -- name + identity badge
+    -- name + identity badge. The active seat gets a non-color cue (a ▶ marker + accent
+    -- name) so it reads without relying on the panel tint / border colour alone.
     local nameCol = p.alive and theme.colors.text or theme.colors.textDim
-    theme.print(p.name, theme.fonts.small, nameCol, r.x + 8, r.y + 6)
+    local nameX = r.x + 8
+    if isCurrent and p.alive then
+        local ty = r.y + 10
+        theme.setColor(theme.colors.accent)
+        love.graphics.polygon("fill", r.x + 8, ty, r.x + 8, ty + 9, r.x + 16, ty + 4.5)
+        nameX = r.x + 22
+        nameCol = theme.colors.accent
+    end
+    theme.print(p.name, theme.fonts.small, nameCol, nameX, r.y + 6)
     local idk = knownIdentity(p)
     local badge = idk and theme.identityCN[idk] or "身份?"
     local badgeCol = idk and theme.identityColor(idk) or theme.colors.hidden
@@ -521,12 +530,16 @@ local function drawPromptBar()
     theme.setColor(theme.colors.line)
     love.graphics.line(0, 38, G.L.playW, 38)
 
-    local turnInfo = string.format("第%d回合 · %s · %s阶段",
-        G.game.turnCount,
-        G.game.current and G.game.current.name or "—",
-        ({ judge = "判定", draw = "摸牌", play = "出牌", discard = "弃牌", ["end"] = "结束",
-           setup = "准备", ready = "准备", over = "结束" })[G.game.phase] or G.game.phase)
-    theme.print(turnInfo, theme.fonts.normal, theme.colors.textDim, 12, 9)
+    -- turn / actor / phase, with the active actor's name emphasised in accent.
+    local f = theme.fonts.normal
+    local phaseCN = ({ judge = "判定", draw = "摸牌", play = "出牌", discard = "弃牌", ["end"] = "结束",
+        setup = "准备", ready = "准备", over = "结束" })[G.game.phase] or G.game.phase
+    local pre = string.format("第%d回合 · ", G.game.turnCount)
+    local nm = G.game.current and G.game.current.name or "—"
+    theme.print(pre, f, theme.colors.textDim, 12, 9)
+    local x2 = 12 + f:getWidth(pre)
+    theme.print(nm, f, theme.colors.accent, x2, 9)
+    theme.print(" · " .. phaseCN .. "阶段", f, theme.colors.textDim, x2 + f:getWidth(nm), 9)
 
     if isHumanDecision() and req.prompt then
         theme.printf("➤ " .. req.prompt, theme.fonts.normal, theme.colors.accent,
