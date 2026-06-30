@@ -136,7 +136,10 @@ function love.load()
     love.keyboard.setKeyRepeat(true)
     sound.load()
     if SHOT then sound.enabled = false end   -- no audio during headless capture
-    newGame(tonumber(os.getenv("ZHS_SHOT_N")) or 6)   -- ZHS_SHOT_N lets a capture pick the table size
+    -- ZHS_SHOT_N lets a capture pick the table size; ignore anything outside 4–8 so a typo
+    -- falls back to the default instead of tripping setup()'s "unsupported player count" assert.
+    local shotN = tonumber(os.getenv("ZHS_SHOT_N"))
+    newGame((shotN and shotN >= 4 and shotN <= 8) and shotN or 6)
     -- screenshot helper: pin the cursor so hover-driven UI (tooltips) renders for capture
     if SHOT then
         local fx, fy = tonumber(os.getenv("ZHS_SHOT_MX")), tonumber(os.getenv("ZHS_SHOT_MY"))
