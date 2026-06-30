@@ -177,8 +177,7 @@ function love.update(dt)
     if G.game.winner and not G._endSoundPlayed then
         G._endSoundPlayed = true
         local me = humanPlayer()
-        local meWin = (G.game.winner == me.identity)
-            or (G.game.winner == "boss" and (me.identity == "boss" or me.identity == "loyal"))
+        local meWin = G.game:identityWon(me.identity)
         sound.play(meWin and "win" or "lose", 0.6)
     end
     if G.req == nil then return end             -- game over
@@ -570,12 +569,7 @@ local function drawHand()
     -- my identity + win-condition reminder
     theme.print("你的身份：" .. theme.identityCN[me.identity], theme.fonts.small,
         theme.identityColor(me.identity), 16, G.L.h - 168)
-    local goal = ({
-        boss  = "目标：清除所有摸鱼党与反骨仔",
-        loyal = "目标：辅佐老板，共同获胜",
-        rebel = "目标：让老板毕业（精神值归零）",
-        spy   = "目标：除你外全员阵亡，最后击杀老板",
-    })[me.identity]
+    local goal = theme.identityGoal[me.identity]
     if goal then theme.print(goal, theme.fonts.tiny, theme.colors.textDim, 16, G.L.h - 150) end
 end
 
@@ -603,12 +597,7 @@ local function drawIntro()
     local idCol = theme.identityColor(me.identity)
     theme.printf("本局你的身份", theme.fonts.normal, theme.colors.textDim, 0, h * 0.18, w, "center")
     theme.printf("【" .. theme.identityCN[me.identity] .. "】", theme.fonts.huge, idCol, 0, h * 0.18 + 30, w, "center")
-    local goal = ({
-        boss  = "目标：清除所有摸鱼党与反骨仔",
-        loyal = "目标：辅佐老板，与其共同获胜",
-        rebel = "目标：让老板毕业（精神值归零）",
-        spy   = "目标：除你外全员阵亡，最后亲手击杀老板",
-    })[me.identity]
+    local goal = theme.identityGoal[me.identity]
     theme.printf(goal or "", theme.fonts.normal, theme.colors.text, 0, h * 0.18 + 92, w, "center")
 
     -- character card
@@ -638,7 +627,7 @@ local function drawGameOver()
     local txt = ({ boss = "老板阵营胜利", rebel = "摸鱼党胜利", spy = "反骨仔（内奸）胜利",
                    draw = "平局" })[win] or win
     local me = humanPlayer()
-    local meWin = (win == me.identity) or (win == "boss" and (me.identity == "boss" or me.identity == "loyal"))
+    local meWin = G.game:identityWon(me.identity)
     theme.printf(meWin and "🎉 你赢了！" or "你输了", theme.fonts.huge,
         meWin and theme.colors.good or theme.colors.bad, 0, h * 0.14, w, "center")
     theme.printf(txt .. "  ·  你是【" .. theme.identityCN[me.identity] .. "】",

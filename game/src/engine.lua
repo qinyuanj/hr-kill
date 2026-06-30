@@ -84,19 +84,20 @@ function Engine:setup(opts)
 
     for seat = 1, n do
         local char = pool[seat]
-        -- 主公 convention: the boss is outnumbered, so grant a max-HP bonus that
-        -- scales gently with table size (more rebels ⇒ bigger cushion). This keeps
-        -- a random-character boss survivable without changing their skills.
+        -- 主公技: the lone boss is out-numbered, so grant bonuses that scale with the
+        -- table size, keeping a random-character boss survivable without touching skills.
+        -- Two levers, tuned empirically (see test/balance.lua):
+        --   • HP cushion = max(0, rebel-1)  ── one less than the rebel count.
+        --   • a per-turn extra draw for the most lop-sided tables (deficit ≥ 2);
+        --     HP alone just makes those grind, card advantage is what wins them.
+        -- The single-loyalist deficit-1 table (5p) would be over-buffed by a per-turn
+        -- draw, so it instead gets +1 HP *on top of* the cushion.
+        -- NET per table ─ 4p: +0HP · 5p: +2HP · 6p: +2HP & +1 draw · 7p: +2HP ·
+        --                 8p: +3HP & +1 draw.  (measured 5p boss-team ≈48% at +2 vs
+        --                 ≈43% at +1, so the +2 stack is intentional, not a bug.)
         local bossBonus, bossDrawBonus = 0, 0
         if ids[seat] == "boss" then
-            -- More rebels ⇒ a wider numbers gap for the lone boss, so the HP cushion
-            -- tracks the rebel count (4p:+0, 5p:+1, 6p/7p:+2, 8p:+3).
             bossBonus = math.max(0, cfg.rebel - 1)
-            -- The deeply out-numbered configs (deficit = enemies − allies ≥ 2, i.e. the
-            -- single-loyalist 6p and the 8p table) get a 主公技 extra draw each turn.
-            -- HP alone just makes those games grind; card advantage is what lets the
-            -- boss team actually win them. A per-turn draw is a big swing, so the
-            -- milder single-loyalist deficit-1 table (5p) gets +1 HP instead.
             local deficit = (cfg.rebel + cfg.spy) - (1 + cfg.loyal)
             bossDrawBonus = (deficit >= 2) and 1 or 0
             if deficit == 1 and cfg.loyal == 1 then bossBonus = bossBonus + 1 end
@@ -581,6 +582,15 @@ function Engine:usePeachCard(player, card, target)
     self:heal(target, 1, "画饼")
 end
 
+-- Discard every equipped card a player holds, clearing all slots. Fixed-order
+-- (EQUIP_SLOTS) iteration keeps reshuffle/draw order reproducible across runs.
+function Engine:discardAllEquip(player)
+    for _, slot in ipairs(Engine.EQUIP_SLOTS) do
+        local c = player.equip[slot]
+        if c then self:toDiscard(c); player.equip[slot] = nil end
+    end
+end
+
 function Engine:killPlayer(target, source)
     target.alive = false
     target.revealed = true
@@ -593,10 +603,7 @@ function Engine:killPlayer(target, source)
     -- move all cards to discard
     for _, c in ipairs(target.hand) do self:toDiscard(c) end
     target.hand = {}
-    for _, slot in ipairs(Engine.EQUIP_SLOTS) do
-        local c = target.equip[slot]
-        if c then self:toDiscard(c); target.equip[slot] = nil end
-    end
+    self:discardAllEquip(target)
     for _, c in ipairs(target.delayed) do self:toDiscard(c) end
     target.delayed = {}
 
@@ -611,10 +618,7 @@ function Engine:killPlayer(target, source)
             local all = {}
             for _, c in ipairs(source.hand) do all[#all + 1] = c end
             self:discardCards(source, all, "错杀嫡系")
-            for _, slot in ipairs(Engine.EQUIP_SLOTS) do
-                local c = source.equip[slot]
-                if c then self:toDiscard(c); source.equip[slot] = nil end
-            end
+            self:discardAllEquip(source)
         end
     end
 
@@ -643,6 +647,15 @@ function Engine:checkWin()
         self.winner = "boss"
         self:logmsg("=== 游戏结束：老板阵营（老板+嫡系）胜利！===")
     end
+end
+
+-- Did the faction of `identity` win the resolved game? Canonical team-membership
+-- rule (boss & loyal share the "boss" victory); callers must not re-derive it.
+function Engine:identityWon(identity)
+    local w = self.winner
+    if not w then return false end
+    if w == "boss" then return identity == "boss" or identity == "loyal" end
+    return w == identity
 end
 
 ----------------------------------------------------------------------

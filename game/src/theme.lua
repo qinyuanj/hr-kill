@@ -40,6 +40,14 @@ theme.colors = {
 }
 
 theme.identityCN = { boss = "老板", loyal = "嫡系", rebel = "摸鱼党", spy = "反骨仔" }
+-- Per-identity win-condition reminder (single source of truth; used by the intro
+-- overlay and the in-game hand panel — keep wording here, not inlined per call site).
+theme.identityGoal = {
+    boss  = "目标：清除所有摸鱼党与反骨仔",
+    loyal = "目标：辅佐老板，共同获胜",
+    rebel = "目标：让老板毕业（精神值归零）",
+    spy   = "目标：除你外全员阵亡，最后亲手击杀老板",
+}
 theme.identityColor = function(id) return theme.colors[id] or theme.colors.hidden end
 
 -- load CJK-capable fonts from the system (read bytes once, build several sizes)

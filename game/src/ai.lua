@@ -142,15 +142,21 @@ local function planAction(game, me)
     me.flags._ai = me.flags._ai or {}
     local ai = me.flags._ai
 
-    -- 1) emergency heal
-    if me.hp < me.maxHp and me.hp <= 2 then
-        local peaches = game:handCardsAs(me, "peach")
-        -- only spend a peach in play phase if it is a real 画饼 (keep view-as for dying)
-        for _, c in ipairs(peaches) do
+    -- Play a real 画饼 (peach) on `target` if one is in hand and legal this phase.
+    -- Only a native peach — view-as peaches are kept in reserve for the dying zone.
+    local function playPeachOn(target)
+        for _, c in ipairs(game:handCardsAs(me, "peach")) do
             if c.subtype == "peach" and game:canPlayInPhase(me, c) then
-                return { type = "playCard", cardId = c.id, targetIds = { me.id } }
+                return { type = "playCard", cardId = c.id, targetIds = { target.id } }
             end
         end
+        return nil
+    end
+
+    -- 1) emergency heal
+    if me.hp < me.maxHp and me.hp <= 2 then
+        local a = playPeachOn(me)
+        if a then return a end
     end
 
     -- 1b) boss-team field medic: a loyalist (or the boss) spends a spare 画饼 to top up
@@ -161,11 +167,8 @@ local function planAction(game, me)
         local healTarget = (me.identity == "loyal" and boss.hp <= 2 and boss.hp < boss.maxHp) and boss
             or (me.identity == "boss" and me.hp <= 3 and me.hp < me.maxHp) and me
         if healTarget then
-            for _, c in ipairs(game:handCardsAs(me, "peach")) do
-                if c.subtype == "peach" and game:canPlayInPhase(me, c) then
-                    return { type = "playCard", cardId = c.id, targetIds = { healTarget.id } }
-                end
-            end
+            local a = playPeachOn(healTarget)
+            if a then return a end
         end
     end
 
