@@ -496,6 +496,7 @@ function Engine:dealDamage(ctx)
     end
     local amount = math.max(0, ctx.amount or 1)
     if amount == 0 or not target.alive then return end
+    ctx.dealt = true   -- a real hit landed; weapon on-hit effects gate on this
     target.hp = target.hp - amount
     self:logmsg("%s 受到 %d 点伤害%s（精神值 %d/%d）", target.name, amount,
         ctx.source and ("，来源 " .. ctx.source.name) or "", math.max(target.hp, 0), target.maxHp)
@@ -690,7 +691,12 @@ function Engine:killPlayer(target, source)
     end
     self:emit({ type = "death", target = target.id })
 
-    self:trig(target, "onDeath", source)
+    -- Once the game is already decided — e.g. an EARLIER death in this same cascade locked
+    -- the winner via a nested checkWin — skip post-game economy. onDeath draws (期权激励),
+    -- kill rewards and the 反骨仔 heal would otherwise mutate a finished board and pollute
+    -- the end-game report (a "kill" and 3 drawn cards credited after the match is over).
+    local decided = self.winner ~= nil
+    if not decided then self:trig(target, "onDeath", source) end
 
     -- move all cards to discard
     for _, c in ipairs(target.hand) do self:toDiscard(c) end
@@ -700,7 +706,7 @@ function Engine:killPlayer(target, source)
     target.delayed = {}
 
     -- rewards / punishment
-    if source and source.alive and source.id ~= target.id then
+    if not decided and source and source.alive and source.id ~= target.id then
         source.stats.kills = source.stats.kills + 1
         if target.identity == "rebel" then
             self:logmsg("%s 击杀【摸鱼党】，摸 3 张牌", source.name)
@@ -724,9 +730,21 @@ end
 
 function Engine:checkWin()
     if self.winner then return end
+    -- A player still inside the dying window (hp<=0 but killPlayer not yet reached) is
+    -- doomed: its alive flag only flips in killPlayer (line ~659). checkWin can fire
+    -- re-entrantly from a NESTED killPlayer during another player's onDying cascade
+    -- (e.g. 罗法援 劳动仲裁 / 王兼容 样式崩了 deal lethal damage from within onDying), and
+    -- whatever it decides is latched by the early-return above. So count a participant as
+    -- live only when alive AND hp>0 — this makes the verdict match the SETTLED board no
+    -- matter how deep the cascade, instead of a transient snapshot. (No effect in normal
+    -- play: a living player always has hp>0; only a mid-cascade victim differs.)
+    local function live(p) return p.alive and p.hp > 0 end
     local boss = self:bossPlayer()
-    if not boss.alive then
-        local others = self:aliveSeatsInOrder()
+    if not live(boss) then
+        local others = {}
+        for _, p in ipairs(self:aliveSeatsInOrder()) do
+            if live(p) then others[#others + 1] = p end
+        end
         if #others == 1 and others[1].identity == "spy" then
             self.winner = "spy"
         else
@@ -738,7 +756,7 @@ function Engine:checkWin()
     -- boss alive: boss/loyal win if no rebel or spy remains alive
     local threat = false
     for _, p in ipairs(self.players) do
-        if p.alive and (p.identity == "rebel" or p.identity == "spy") then threat = true break end
+        if live(p) and (p.identity == "rebel" or p.identity == "spy") then threat = true break end
     end
     if not threat then
         self.winner = "boss"
@@ -831,8 +849,10 @@ function Engine:performAttack(source, target, opts)
     -- so the reduction follows whoever actually takes the hit (not the original target).
     self:dealDamage(ctx)
 
-    -- weapon on-hit effects (only for a real 加班 card and if target still alive)
-    if opts.card and target.alive and source.alive and source.equip.weapon then
+    -- weapon on-hit effects: only for a real 加班 card that actually DEALT damage (ctx.dealt
+    -- is set in dealDamage) — armor / 老板来了 reducing the hit to 0 fully mitigates, so
+    -- MacBook Pro / 工牌 do not fire, matching onTakeDamage which also skips a 0-damage hit.
+    if opts.card and ctx.dealt and target.alive and source.alive and source.equip.weapon then
         self:weaponOnHit(source, target)
     end
     return true
@@ -998,22 +1018,25 @@ end
 -- resolve a delayed trick at a player's judgement phase
 function Engine:resolveDelayed(player, card)
     util.removeValue(player.delayed, card)
-    self:toDiscard(card)   -- the delayed card itself returns to the discard pile
     if card.name == "试用期考核" then
         -- 可在判定前弃【画饼】取消
         local peaches = self:handCardsAs(player, "peach")
         if #peaches > 0 and self:askYesNo(player, "【试用期考核】判定前，弃1张【画饼】取消？") then
             local c = peaches[1]
             self:discardCards(player, { c }, "取消试用期考核")
-            return
-        end
-        local j = self:judge(player, "试用期考核")
-        if j and j.suit == "spade" and j.rank >= 2 and j.rank <= 9 then
-            self:loseHp(player, 2, "试用期考核")
         else
-            self:logmsg("%s 通过了试用期考核", player.name)
+            local j = self:judge(player, "试用期考核")
+            if j and j.suit == "spade" and j.rank >= 2 and j.rank <= 9 then
+                self:loseHp(player, 2, "试用期考核")
+            else
+                self:logmsg("%s 通过了试用期考核", player.name)
+            end
         end
     end
+    -- The delayed card returns to the discard pile only AFTER its judgement resolves: if it
+    -- went to discard first, an empty-deck reshuffle inside judge() could recycle 试用期考核
+    -- back into the deck and flip it as its OWN judgement result.
+    self:toDiscard(card)
 end
 
 Engine.Tricks = Tricks

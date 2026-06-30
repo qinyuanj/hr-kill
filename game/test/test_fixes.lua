@@ -769,5 +769,80 @@ do
     check("the card moved (not duplicated): 朱变现 no longer holds it", zhu.hand[1] ~= give)
 end
 
+print("[33] win-timing: a boss (罗法援) whose 劳动仲裁 kills the last rebel mid-dying still LOSES")
+do
+    -- Boss is 罗法援 at 1hp; a lone rebel (2hp) lands the lethal 加班. The boss's onDying
+    -- 劳动仲裁 drops the rebel to 0 BEFORE the boss's own alive flag clears. A checkWin fired
+    -- from that nested death must not credit the still-"alive" (hp<=0) boss with the win.
+    local g = neutralGame(81, { "boss", "rebel", "loyal", "spy" })
+    g.players[3].alive = false; g.players[4].alive = false
+    local boss = withChar(g, 24, 1); boss.identity = "boss"; boss.hp = 1; boss.hand = {}
+    local reb = g.players[2]; reb.hp = 2; reb.hand = {}
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("劳动仲裁") ~= nil end
+    g.askCard = function() return nil end
+    g:dealDamage({ target = boss, source = reb, amount = 1, card = mkCard("加班") })
+    check("boss dead -> winner is the rebel team, never 'boss'", g.winner == "rebel" and not boss.alive,
+        "winner=" .. tostring(g.winner))
+end
+
+print("[34] win-timing: 劳动仲裁 kills the boss mid-dying; the spy is the true sole survivor -> spy wins")
+do
+    local g = neutralGame(82, { "boss", "rebel", "spy", "loyal" })
+    g.players[4].alive = false
+    local boss = g.players[1]; boss.hp = 2; boss.hand = {}
+    local luo = withChar(g, 24, 2); luo.identity = "rebel"; luo.hp = 1; luo.hand = {}
+    local spy = g.players[3]; spy.hp = 3; spy.hand = {}
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("劳动仲裁") ~= nil end
+    g.askCard = function() return nil end
+    g:dealDamage({ target = luo, source = boss, amount = 1, card = mkCard("加班") })
+    check("the surviving spy wins (not mis-credited to the doomed rebel)",
+        g.winner == "spy" and spy.alive and not boss.alive and not luo.alive, "winner=" .. tostring(g.winner))
+end
+
+print("[35] no post-win economy: a death resolved AFTER the winner is locked pays no 击杀奖励")
+do
+    -- 李接口(loyal) kills 王兼容(rebel); 样式崩了 kills the boss first, locking winner=rebel. 王兼容's
+    -- own (now post-win) death must NOT pay the loyal killer the 击杀【摸鱼党】 draw-3.
+    local g = neutralGame(83, { "boss", "loyal", "rebel", "spy" })
+    g.players[4].alive = false
+    local boss = g.players[1]; boss.hp = 1; boss.hand = {}
+    local li = g.players[2]; li.hp = 5; li.hand = {}
+    local wang = withChar(g, 3, 3); wang.identity = "rebel"; wang.hp = 1; wang.hand = {}
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("样式崩了") ~= nil end
+    g.askTarget = function(_, _, _, prompt) if prompt and prompt:find("样式崩了") then return boss end end
+    g.askCard = function() return nil end
+    g:dealDamage({ target = wang, source = li, amount = 1, card = mkCard("加班") })
+    check("winner=rebel and the loyal killer drew NO post-win 击杀奖励",
+        g.winner == "rebel" and #li.hand == 0, "winner=" .. tostring(g.winner) .. " li.hand=" .. #li.hand)
+end
+
+print("[36] weapon on-hit gates on damage dealt: armor reducing 加班 to 0 stops the MacBook Pro discard")
+do
+    local g = neutralGame(84, { "boss", "rebel", "loyal", "spy" })
+    local atk = g.players[1]; atk.equip.weapon = mkCard("MacBook Pro")
+    local def = g.players[2]; def.hp = 4; def.armorUsedThisTurn = false
+    def.equip.armor = { id = 991, name = "人体工学椅", type = "equip", subtype = "armor" }
+    def.hand = { mkCard("摸鱼"), mkCard("画饼") }
+    g.askYesNo = function() return true end        -- would discard if the weapon fired
+    g.askCard = function() return nil end           -- decline the dodge; take the 0-damage hit
+    g:performAttack(atk, def, { card = mkCard("加班") })
+    check("0-damage hit -> hand intact, no MacBook Pro discard", def.hp == 4 and #def.hand == 2,
+        "def.hp=" .. def.hp .. " hand=" .. #def.hand)
+end
+
+print("[37] 试用期考核 never self-judges: with an empty pool the delayed card isn't its own judgment")
+do
+    local g = neutralGame(85, { "boss", "rebel", "loyal", "spy" })
+    local p = g.players[1]; p.hp = 4; p.hand = {}
+    g.deck = {}; g.discard = {}
+    local exam = mkCard("试用期考核", "spade", 5)    -- a spade-5 WOULD fail the judge if self-flipped
+    p.delayed = { exam }
+    g.askYesNo = function() return false end        -- don't use 画饼 to cancel
+    g:resolveDelayed(p, exam)
+    check("empty pool -> judge nil -> passes, no hp loss (no self-judge)", p.hp == 4, "p.hp=" .. p.hp)
+    check("the 试用期考核 card lands in discard exactly once", #g.discard == 1 and g.discard[1] == exam,
+        "discard=" .. #g.discard)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
