@@ -57,7 +57,11 @@ C.list = {
                 if game:askYesNo(p, "发动【这个很简单】令目标本回合无法【摸鱼】？", true) then
                     p.used.thisIsEasy = true
                     ctx.noDodge = true
-                    game:logmsg("%s【这个很简单】：目标无法【摸鱼】", p.name)
+                    -- 本回合无法【摸鱼】: tag the target by turn id so LATER 加班 this turn (福报/
+                    -- weapon) also can't be dodged, not just the current one. Auto-expires when
+                    -- turnCount advances, so no cleanup needed.
+                    if ctx.target then ctx.target._noDodgeTurn = game.turnCount end
+                    game:logmsg("%s【这个很简单】：目标本回合无法【摸鱼】", p.name)
                 end
             end,
             actives = {
@@ -99,7 +103,9 @@ C.list = {
                 if not src or not once(p, "frontendBug") then return end
                 local cands = {}
                 for _, q in ipairs(game:aliveSeatsInOrder()) do
-                    if q.id ~= p.id and q.id ~= src.id and game:canReach(src, q) then cands[#cands + 1] = q end
+                    -- 流离: the substitute must be within 李接口's OWN attack range (not the
+                    -- attacker's) — diverges once weapons/horses make the two ranges differ.
+                    if q.id ~= p.id and q.id ~= src.id and game:canReach(p, q) then cands[#cands + 1] = q end
                 end
                 if #cands == 0 then p.used.frontendBug = nil return end
                 local t = game:askTarget(p, cands, "【这是前端问题】转移【加班】给？", true)

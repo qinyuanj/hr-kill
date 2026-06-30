@@ -818,8 +818,8 @@ function Engine:performAttack(source, target, opts)
         self:logmsg("（卷一下：本次【加班】伤害+1）")
     end
 
-    -- dodge
-    if not ctx.noDodge and self:tryDodge(target, ctx) then
+    -- dodge (张需求 这个很简单 can lock a target out of 摸鱼 for the whole turn, not just this 加班)
+    if not ctx.noDodge and target._noDodgeTurn ~= self.turnCount and self:tryDodge(target, ctx) then
         self:trig(source, "onAttackDodged", ctx)
         return false
     end
@@ -1213,6 +1213,7 @@ function Engine:playCard(user, card, targetIds)
     if card.type == "equip" then
         self:equipCard(user, card)
         self:trig(user, "onEquip", card)
+        self:trig(user, "onPlayCard", card)   -- equips are "使用牌" too (新媒体 十万加 红牌摸1)
         self:emitPlay(user, card, nil)
         return true
     end

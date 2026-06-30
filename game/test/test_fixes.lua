@@ -558,5 +558,75 @@ do
         "type=" .. tostring(cc and cc.type) .. " tgt=" .. tostring(cc and cc.targetIds and cc.targetIds[1]))
 end
 
+print("[22] 何爆款 十万加 fires on red EQUIPMENT plays (engine onPlayCard on the equip path)")
+do
+    local g = newGame(6, 31)
+    local p = withChar(g, 14, 1)        -- 何爆款
+    g.current = p
+    p.used = {}
+    local eq = mkCard("MacBook Pro", "heart")   -- a RED equip
+    p.hand = { eq }
+    g:playCard(p, eq, {})
+    check("十万加 counted the red equip play", p.used.viralCount == 1,
+        "viralCount=" .. tostring(p.used.viralCount))
+    -- a BLACK equip must NOT trigger it
+    p.used = {}
+    local eqB = mkCard("工牌", "spade")
+    p.hand = { eqB }
+    g:playCard(p, eqB, {})
+    check("十万加 does NOT fire on a black equip", (p.used.viralCount or 0) == 0,
+        "viralCount=" .. tostring(p.used.viralCount))
+end
+
+print("[23] 张需求 这个很简单 locks the target out of 摸鱼 for the WHOLE turn, not just one 加班")
+do
+    local g = newGame(6, 31)
+    local p = withChar(g, 1, 1)         -- 张需求
+    local target = g.players[2]
+    target.char = { name = "靶子", title = "", faction = "", maxHp = 4, skills = {} }  -- neutralize
+    for _, q in ipairs(g.players) do q.hp = 4; q.maxHp = 4 end
+    g.current = p
+    g.turnCount = 7
+    p.used = {}
+    g.askYesNo = function(_, _, prompt, aiDefault)
+        if prompt and prompt:find("这个很简单") then return true end
+        return aiDefault and true or false
+    end
+    g.askCard = function(_, _, opts, _, _, hint)
+        if hint == "dodge" then return opts[1] end   -- the target WOULD dodge if allowed
+        return nil
+    end
+    target.hand = { mkCard("摸鱼") }
+    g:performAttack(p, target, { card = mkCard("加班") })   -- attack 1: 这个很简单 fires
+    check("这个很简单 tags the target for this turn", target._noDodgeTurn == g.turnCount,
+        "tag=" .. tostring(target._noDodgeTurn))
+    target.hp = 4
+    target.hand = { mkCard("摸鱼") }                        -- fresh dodge available
+    g:performAttack(p, target, { card = mkCard("加班") })   -- attack 2: must still be undodgeable
+    check("a later 加班 the same turn still can't be 摸鱼'd", target.hp < 4,
+        "hp=" .. target.hp)
+end
+
+print("[24] 李接口 这是前端问题 deflect range is measured from 李接口, not the attacker")
+do
+    local g = newGame(6, 31)
+    local libk = withChar(g, 2, 2)             -- 李接口 at seat 2
+    libk.equip.weapon = mkCard("双屏显示器")   -- range 3
+    local attacker = g.players[1]
+    attacker.equip.weapon = nil                -- range 1
+    libk.used = {}
+    local captured
+    g.askTarget = function(_, _, cands) captured = cands; return nil end
+    libk.char.skills.onTargetedByAttack(g, libk, { source = attacker, target = libk, card = mkCard("加班") })
+    local hasSeat4, hasAttacker = false, false
+    for _, q in ipairs(captured or {}) do
+        if q.id == g.players[4].id then hasSeat4 = true end
+        if q.id == attacker.id then hasAttacker = true end
+    end
+    check("a player in 李接口's range but out of the attacker's (seat 4) is offered", hasSeat4,
+        "n=" .. tostring(captured and #captured))
+    check("the attacker is never a deflect substitute", not hasAttacker)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
