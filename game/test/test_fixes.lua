@@ -309,5 +309,40 @@ do
         "viral=" .. tostring(mei.flags._viralCount))
 end
 
+----------------------------------------------------------------------
+print("[12] AI 背锅: an AI victim redirects a (near-)lethal hit, conserving cards")
+do
+    local AI = require("src.ai")
+    local g = newGame(4, 31)
+    for _, p in ipairs(g.players) do
+        p.char = { id = 0, title = "测试", name = "桩", maxHp = 5, skills = {} }
+        p.maxHp = 5; p.hp = 5; p.hand = {}; p.isHuman = false
+    end
+    local atk, victim = g.players[1], g.players[2]
+    victim.hp = 1                          -- a 1-damage hit is lethal → AI should 背锅
+    victim.hand = { mkCard("背锅") }
+    g.current = atk
+    g:resetReactiveBudgets(atk)
+    local before = totalCards(g)
+    local co = coroutine.create(function()
+        g:performAttack(atk, victim, { card = mkCard("加班"), amount = 1, dodgeable = false })
+    end)
+    local ans = nil
+    while true do
+        local ok, req = coroutine.resume(co, ans)
+        assert(ok, tostring(req))
+        if coroutine.status(co) == "dead" then break end
+        ans = AI.answer(g, req)
+    end
+    check("AI victim survived the lethal hit by redirecting", victim.alive and victim.hp == 1,
+        "alive=" .. tostring(victim.alive) .. " hp=" .. victim.hp)
+    local elsewhere = false
+    for _, i in ipairs({ 1, 3, 4 }) do if g.players[i].hp < 5 then elsewhere = true end end
+    check("the redirected hit landed on another player", elsewhere)
+    check("背锅 left the victim's hand", #victim.hand == 0)
+    check("cards conserved (背锅 → discard)", totalCards(g) == before,
+        "before=" .. before .. " after=" .. totalCards(g))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

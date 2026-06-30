@@ -508,8 +508,12 @@ end
 -- 背锅 card (victim transfers damage) + 实习生 背锅侠 (substitute). One pass each.
 function Engine:maybeSubstituteDamage(ctx)
     local victim = ctx.target
-    -- 背锅 card: only offered to humans (needs a meaningful target choice).
-    if victim.isHuman and victim.alive then
+    -- 背锅 card: the victim may transfer this hit to someone else. Humans are always
+    -- offered the choice; an AI victim only spends 背锅 on a (near-)lethal hit — one that
+    -- would otherwise drop it into the dying zone — and picks the redirect target with the
+    -- same identity-honest enemy heuristic it uses for attacks (boss-team never onto the
+    -- boss, spy keeps the boss alive while it still wants to).
+    if victim.alive then
         local backpan = nil
         for _, c in ipairs(victim.hand) do if c.name == "背锅" then backpan = c break end end
         if backpan then
@@ -517,7 +521,8 @@ function Engine:maybeSubstituteDamage(ctx)
             for _, p in ipairs(self:aliveSeatsInOrder()) do
                 if p.id ~= victim.id then others[#others + 1] = p end
             end
-            if #others > 0 and self:askYesNo(victim, "使用【背锅】将伤害转移给他人？", false) then
+            local aiUse = (ctx.amount or 1) >= victim.hp
+            if #others > 0 and self:askYesNo(victim, "使用【背锅】将伤害转移给他人？", aiUse) then
                 local t = self:askTarget(victim, others, "【背锅】转移伤害给？", true, "enemy")
                 if t then
                     self:removeFromHand(victim, backpan)
