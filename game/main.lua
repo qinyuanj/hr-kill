@@ -136,7 +136,7 @@ function love.load()
     love.keyboard.setKeyRepeat(true)
     sound.load()
     if SHOT then sound.enabled = false end   -- no audio during headless capture
-    newGame(6)
+    newGame(tonumber(os.getenv("ZHS_SHOT_N")) or 6)   -- ZHS_SHOT_N lets a capture pick the table size
     -- screenshot helper: pin the cursor so hover-driven UI (tooltips) renders for capture
     if SHOT then
         local fx, fy = tonumber(os.getenv("ZHS_SHOT_MX")), tonumber(os.getenv("ZHS_SHOT_MY"))
@@ -221,6 +221,7 @@ end
 ----------------------------------------------------------------------
 local function knownIdentity(p)
     local me = humanPlayer()
+    if G.game and G.game.winner then return p.identity end   -- game over: everyone is revealed
     if p.identity == "boss" then return p.identity end
     if p.revealed then return p.identity end
     if p.id == me.id then return p.identity end
@@ -751,8 +752,38 @@ local function drawGameOver()
     theme.printf(reportVerdict(me, meWin), theme.fonts.normal,
         meWin and theme.colors.good or theme.colors.textDim, bx, by + bh - 34, bw, "center")
 
+    -- 全员身份揭晓: the hidden-identity payoff — who everyone actually was, who survived, who won.
+    local ps = G.game.players
+    local rTop = by + bh + 14
+    local rRows = math.ceil(#ps / 2)
+    local rRowH = 25
+    local rh2 = 30 + rRows * rRowH + 8
+    theme.setColor({ 0.10, 0.11, 0.15 }, 0.96)
+    theme.rrect("fill", bx, rTop, bw, rh2, 10)
+    theme.setColor(theme.colors.accent, 0.45)
+    love.graphics.setLineWidth(1.5)
+    theme.rrect("line", bx, rTop, bw, rh2, 10)
+    love.graphics.setLineWidth(1)
+    theme.printf("🎭 全员身份揭晓", theme.fonts.small, theme.colors.accent, bx, rTop + 8, bw, "center")
+    local rColW = bw / 2
+    for i, p in ipairs(ps) do
+        local col = (i - 1) % 2
+        local cx = bx + 14 + col * rColW
+        local cy = rTop + 32 + math.floor((i - 1) / 2) * rRowH
+        local nm = string.format("%d.%s", p.seat, p.char.name)
+        if p.id == me.id then nm = nm .. "(你)" end
+        theme.print(nm, theme.fonts.small, p.alive and theme.colors.text or theme.colors.textDim, cx, cy)
+        theme.print(theme.identityCN[p.identity], theme.fonts.small,
+            theme.identityColor(p.identity), cx + rColW - 112, cy)
+        theme.print(p.alive and "存活" or "出局", theme.fonts.tiny,
+            p.alive and theme.colors.good or theme.colors.bad, cx + rColW - 70, cy + 1)
+        if G.game:identityWon(p.identity) then
+            theme.print("🏆", theme.fonts.tiny, theme.colors.accent, cx + rColW - 34, cy)
+        end
+    end
+
     theme.printf("按 R 或点击「重开」再来一局", theme.fonts.normal, theme.colors.textDim,
-        0, by + bh + 16, w, "center")
+        0, rTop + rh2 + 14, w, "center")
 end
 
 local function drawHelp()
