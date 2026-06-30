@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# LÖVE / build artifacts
+*.love
+shot.png
+
+# editor
+.vscode/
+.idea/
+*.swp

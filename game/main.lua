@@ -1,0 +1,677 @@
+-- main.lua — LÖVE front-end for 《职海杀》.
+-- Drives the engine coroutine, renders the table, and turns the engine's decision
+-- requests into clickable UI for the human (seat 1) while the AI plays the rest.
+
+package.path = "./?.lua;" .. package.path
+
+local Engine = require("src.engine")
+local AI     = require("src.ai")
+local Chars  = require("src.characters")
+local cards  = require("src.cards")
+local theme  = require("src.theme")
+
+local G = {
+    game = nil,
+    req = nil,            -- current pending request from the engine
+    aiTimer = 0,
+    aiDelay = 0.55,
+    numPlayers = 6,
+    selecting = nil,      -- { cardId, targetIds } during play-phase target selection
+    flash = nil,          -- { text, t }
+    help = false,
+    -- layout caches (rebuilt each frame)
+    handRects = {},
+    playerRects = {},
+    buttons = {},
+    logScroll = 0,
+}
+
+----------------------------------------------------------------------
+-- setup / driver
+----------------------------------------------------------------------
+local function humanPlayer()
+    if not G.game then return nil end
+    -- resolve by the isHuman flag (object identity survives 空降高管 seat rotation)
+    for _, p in ipairs(G.game.players) do
+        if p.isHuman then return p end
+    end
+    return G.game.players[1]
+end
+
+-- forward declarations (defined in the input section, referenced by layout/drawHand)
+local commitPlay, tryPlayCard, cardActionable
+
+local function newGame(n)
+    G.numPlayers = n or G.numPlayers
+    G.game = Engine.new({
+        numPlayers = G.numPlayers,
+        humanSeat = 1,
+        seed = os.time() % 2000000000,
+        characters = Chars.list,
+    })
+    G.game:start()
+    G.selecting = nil
+    G.flash = nil
+    G.req = G.game:resume(nil)
+    G.aiTimer = 0
+end
+
+-- resume the engine with an answer; capture the next request
+local function step(answer)
+    G.selecting = nil
+    G.req = G.game:resume(answer)
+    G.aiTimer = 0
+end
+
+local function isHumanDecision()
+    return G.req ~= nil and G.req.player and G.req.player.isHuman
+end
+
+-- screenshot mode: `love . --shot` renders a representative frame to the save
+-- dir then quits. Used to verify real rendering without manual interaction.
+local SHOT = false
+for _, a in ipairs(_G.arg or {}) do if a == "--shot" then SHOT = true end end
+if os.getenv("ZHS_SHOT") then SHOT = true end
+local shotFrame, shotDone = 0, false
+
+function love.load()
+    theme.loadFonts()
+    love.graphics.setBackgroundColor(theme.colors.bg)
+    love.keyboard.setKeyRepeat(true)
+    newGame(6)
+end
+
+function love.update(dt)
+    if not G.game then return end
+
+    if SHOT and not shotDone then
+        -- drive AI (and optionally the human) until we reach the target frame to capture
+        shotFrame = shotFrame + 1
+        local want = os.getenv("ZHS_SHOT_KIND")   -- e.g. "playAction" to show the play UI
+        local atTarget = isHumanDecision() and (not want or G.req.kind == want)
+        if G.req and not atTarget then
+            step(AI.answer(G.game, G.req))
+        end
+        if (atTarget and shotFrame > 30) or shotFrame > 6000 or G.req == nil then
+            shotDone = true
+            love.graphics.captureScreenshot("shot.png")
+            G._quitAt = shotFrame + 3
+        end
+        if G._quitAt and shotFrame >= G._quitAt then love.event.quit() end
+        return
+    end
+
+    if G.flash then
+        G.flash.t = G.flash.t - dt
+        if G.flash.t <= 0 then G.flash = nil end
+    end
+    if G.req == nil then return end             -- game over
+    -- _G.AUTOPLAY lets a test harness drive the human seat with the AI too.
+    if not isHumanDecision() or _G.AUTOPLAY then
+        G.aiTimer = G.aiTimer + dt
+        if G.aiTimer >= G.aiDelay or _G.AUTOPLAY then
+            local ans = AI.answer(G.game, G.req)
+            step(ans)
+        end
+    end
+end
+
+local function flash(text)
+    G.flash = { text = text, t = 1.6 }
+end
+
+----------------------------------------------------------------------
+-- knowledge: what identity the human is allowed to see for player p
+----------------------------------------------------------------------
+local function knownIdentity(p)
+    local me = humanPlayer()
+    if p.identity == "boss" then return p.identity end
+    if p.revealed then return p.identity end
+    if p.id == me.id then return p.identity end
+    if p._revealedTo and p._revealedTo[me.id] then return p.identity end
+    return nil
+end
+
+----------------------------------------------------------------------
+-- which cards need an explicit target click
+----------------------------------------------------------------------
+local TARGETED = {
+    ["加班"] = true, ["画饼"] = true, ["PUA"] = true, ["OKR对齐"] = true,
+    ["日报周报"] = true, ["毕业优化"] = true, ["试用期考核"] = true,
+}
+
+----------------------------------------------------------------------
+-- layout (rebuilt every frame; also used for hit-testing)
+----------------------------------------------------------------------
+local function addButton(label, x, y, w, h, color, action, danger)
+    G.buttons[#G.buttons + 1] = { label = label, x = x, y = y, w = w, h = h,
+        color = color, action = action, danger = danger }
+end
+
+local function layout()
+    local w, h = love.graphics.getDimensions()
+    G.handRects = {}
+    G.playerRects = {}
+    G.buttons = {}
+    local logW = 330
+    local playW = w - logW
+    G.L = { w = w, h = h, logW = logW, playW = playW }
+
+    -- table ellipse
+    local cx, cy = playW / 2, h * 0.43
+    local rx, ry = playW * 0.40, h * 0.285
+    G.L.cx, G.L.cy, G.L.rx, G.L.ry = cx, cy, rx, ry
+
+    local n = G.numPlayers
+    local pw, ph = 156, 96
+    -- always seat the human at the bottom, others clockwise in seat order
+    local me = humanPlayer()
+    local hSeat = me and me.seat or 1
+    for seat = 1, n do
+        local p = G.game.players[seat]
+        local k = (seat - hSeat) % n
+        local ang = math.rad(90 + k * (360 / n))
+        local px = cx + rx * math.cos(ang)
+        local py = cy + ry * math.sin(ang)
+        G.playerRects[p.id] = { x = px - pw / 2, y = py - ph / 2, w = pw, h = ph, cx = px, cy = py }
+    end
+
+    -- human hand row
+    local me = humanPlayer()
+    local handY = h - 132
+    local cw, ch, gap = 86, 116, 8
+    local total = #me.hand * (cw + gap) - gap
+    local startX = math.max(16, (playW - total) / 2)
+    for i, c in ipairs(me.hand) do
+        local x = startX + (i - 1) * (cw + gap)
+        G.handRects[c.id] = { x = x, y = handY, w = cw, h = ch, card = c }
+    end
+
+    -- action buttons / decision controls
+    local req = G.req
+    local by = handY - 46
+    if req and req.player and req.player.isHuman then
+        if req.kind == "playAction" then
+            -- end turn
+            addButton("结束回合", playW - 116, by, 104, 36, theme.colors.btnDanger, function()
+                step({ type = "end" })
+            end, true)
+            -- active skills
+            local bx = 16
+            for _, sk in ipairs(G.game:listActiveSkills(me)) do
+                local label = "技·" .. sk.name
+                local bw = math.max(96, theme.fonts.small:getWidth(label) + 22)
+                addButton(label, bx, by, bw, 36, theme.colors.btn, function()
+                    step({ type = "skill", skillId = sk.id })
+                end)
+                bx = bx + bw + 8
+            end
+        elseif req.kind == "chooseOption" then
+            local bx = 16
+            for i, opt in ipairs(req.options) do
+                local bw = math.max(90, theme.fonts.normal:getWidth(opt) + 28)
+                addButton(opt, bx, by, bw, 38, theme.colors.btn, function() step(i) end)
+                bx = bx + bw + 10
+            end
+        elseif req.kind == "chooseCard" or req.kind == "chooseTarget" then
+            if req.optional then
+                addButton("取消 / 跳过", playW - 140, by, 128, 38, theme.colors.btnDanger,
+                    function() step(nil) end, true)
+            end
+        end
+    end
+
+    -- card conversion menu (老板/楚抓手/面试官 view-as plays)
+    if G.cardMenu then
+        local cr = G.handRects[G.cardMenu.cardId]
+        if cr then
+            local mw, mh = 156, 30
+            for i, opt in ipairs(G.cardMenu.options) do
+                local bx = math.min(playW - mw - 4, math.max(4, cr.x + cr.w / 2 - mw / 2))
+                local byy = cr.y - 8 - (#G.cardMenu.options - i + 1) * (mh + 4)
+                addButton(opt.label, bx, byy, mw, mh, theme.colors.btnHover, function()
+                    local card = G.game:findCard(humanPlayer(), G.cardMenu.cardId)
+                    local asName = opt.asName
+                    G.cardMenu = nil
+                    if card then commitPlay(card, asName) end
+                end)
+            end
+        else
+            G.cardMenu = nil
+        end
+    end
+
+    -- restart button (always available, top-left of log area)
+    addButton("重开", w - logW + 12, 12, 60, 26, theme.colors.btn, function() newGame(G.numPlayers) end)
+    -- player count cycler
+    addButton("人数:" .. G.numPlayers, w - logW + 80, 12, 92, 26, theme.colors.btn, function()
+        local order = { 4, 5, 6, 7, 8 }
+        local idx = 1
+        for i, v in ipairs(order) do if v == G.numPlayers then idx = i end end
+        newGame(order[(idx % #order) + 1])
+    end)
+end
+
+----------------------------------------------------------------------
+-- drawing
+----------------------------------------------------------------------
+local function drawCardFace(c, x, y, w, h, opts)
+    opts = opts or {}
+    local col = theme.colors.cardBasic
+    if c.type == "trick" then col = theme.colors.cardTrick
+    elseif c.type == "equip" then col = theme.colors.cardEquip end
+
+    theme.setColor({ col[1] * 0.30, col[2] * 0.30, col[3] * 0.34 })
+    theme.rrect("fill", x, y, w, h, 7)
+    if opts.selected then
+        theme.setColor(theme.colors.highlight); love.graphics.setLineWidth(3)
+    elseif opts.candidate then
+        theme.setColor(theme.colors.targetable); love.graphics.setLineWidth(3)
+    else
+        theme.setColor(col); love.graphics.setLineWidth(1.5)
+    end
+    theme.rrect("line", x, y, w, h, 7)
+    love.graphics.setLineWidth(1)
+
+    if opts.dim then theme.setColor({ 0, 0, 0 }, 0.45); theme.rrect("fill", x, y, w, h, 7) end
+
+    -- suit/rank top-left
+    local suitCol = cards.isRed(c) and theme.colors.cardRed or theme.colors.text
+    theme.print(cards.SUIT_CN[c.suit] .. cards.rankStr(c), theme.fonts.small, suitCol, x + 6, y + 5)
+    -- name centered
+    theme.printf(c.name, theme.fonts.normal, theme.colors.text, x, y + h / 2 - 26, w, "center")
+    -- type tag
+    local tag = c.type == "basic" and "基本" or (c.type == "trick" and "锦囊" or "装备")
+    theme.printf(tag, theme.fonts.tiny, theme.colors.textDim, x, y + h - 18, w, "center")
+end
+
+local function drawHpPips(p, x, y)
+    local r = 6
+    for i = 1, p.maxHp do
+        local on = i <= p.hp
+        if on then
+            theme.setColor(p.hp <= 1 and theme.colors.hpLow or theme.colors.hpFull)
+        else
+            theme.setColor(theme.colors.hpEmpty)
+        end
+        love.graphics.circle("fill", x + (i - 1) * (r * 2 + 4) + r, y + r, r)
+        theme.setColor(theme.colors.line)
+        love.graphics.circle("line", x + (i - 1) * (r * 2 + 4) + r, y + r, r)
+    end
+end
+
+local function drawPlayer(p)
+    local r = G.playerRects[p.id]
+    if not r then return end
+    local isCurrent = G.game.current and G.game.current.id == p.id
+    local panel = theme.colors.panel
+    if isCurrent then panel = theme.colors.panelTurn end
+    if not p.alive then panel = theme.colors.bg2 end
+
+    theme.setColor(panel)
+    theme.rrect("fill", r.x, r.y, r.w, r.h, 8)
+    -- targetable highlight when this player is a candidate
+    local req = G.req
+    local candidate = false
+    if req and req.player and req.player.isHuman then
+        if req.kind == "chooseTarget" then
+            for _, id in ipairs(req.candidates) do if id == p.id then candidate = true end end
+        elseif G.selecting then
+            for _, id in ipairs(G.selecting.targetIds) do if id == p.id then candidate = true end end
+        end
+    end
+    if candidate then
+        theme.setColor(theme.colors.targetable); love.graphics.setLineWidth(3)
+    elseif isCurrent then
+        theme.setColor(theme.colors.accent); love.graphics.setLineWidth(2)
+    else
+        theme.setColor(theme.colors.line); love.graphics.setLineWidth(1)
+    end
+    theme.rrect("line", r.x, r.y, r.w, r.h, 8)
+    love.graphics.setLineWidth(1)
+
+    -- name + identity badge
+    local nameCol = p.alive and theme.colors.text or theme.colors.textDim
+    theme.print(p.name, theme.fonts.small, nameCol, r.x + 8, r.y + 6)
+    local idk = knownIdentity(p)
+    local badge = idk and theme.identityCN[idk] or "身份?"
+    local badgeCol = idk and theme.identityColor(idk) or theme.colors.hidden
+    local bw = theme.fonts.tiny:getWidth(badge) + 12
+    theme.setColor({ badgeCol[1] * 0.3, badgeCol[2] * 0.3, badgeCol[3] * 0.3 })
+    theme.rrect("fill", r.x + r.w - bw - 6, r.y + 6, bw, 18, 4)
+    theme.print(badge, theme.fonts.tiny, badgeCol, r.x + r.w - bw - 1, r.y + 7)
+
+    -- char title·name
+    theme.print(p.char.title .. "·" .. p.char.name, theme.fonts.tiny, theme.colors.textDim, r.x + 8, r.y + 26)
+
+    -- hp pips
+    drawHpPips(p, r.x + 8, r.y + 44)
+
+    -- hand count + equip
+    theme.print("手牌 " .. #p.hand, theme.fonts.tiny, theme.colors.textDim, r.x + 8, r.y + 60)
+    local ex = r.x + 8
+    local ey = r.y + 76
+    local eqs = {}
+    if p.equip.weapon then eqs[#eqs + 1] = "武:" .. (p.equip.weapon.range or 1) end
+    if p.equip.armor then eqs[#eqs + 1] = "防" end
+    if p.equip.minusHorse then eqs[#eqs + 1] = "-1" end
+    if p.equip.plusHorse then eqs[#eqs + 1] = "+1" end
+    if p.equip.treasure then eqs[#eqs + 1] = "宝" end
+    if #p.delayed > 0 then eqs[#eqs + 1] = "判×" .. #p.delayed end
+    if #eqs > 0 then
+        theme.print(table.concat(eqs, " "), theme.fonts.tiny, theme.colors.cardEquip, ex, ey)
+    end
+
+    if not p.alive then
+        theme.printf("已阵亡", theme.fonts.small, theme.colors.bad, r.x, r.y + r.h / 2 - 8, r.w, "center")
+    end
+end
+
+local function drawLog()
+    local w, h = G.L.w, G.L.h
+    local x = w - G.L.logW
+    theme.setColor(theme.colors.bg2)
+    love.graphics.rectangle("fill", x, 0, G.L.logW, h)
+    theme.setColor(theme.colors.line)
+    love.graphics.line(x, 0, x, h)
+
+    theme.print("战报", theme.fonts.mid, theme.colors.accent, x + 12, 44)
+
+    local font = theme.fonts.small
+    love.graphics.setFont(font)
+    local pad = 12
+    local lineH = font:getHeight() + 4
+    local areaY = 76
+    local areaH = h - areaY - 12
+    local maxLines = math.floor(areaH / lineH)
+    local log = G.game.log
+    local total = #log
+    local startI = math.max(1, total - maxLines + 1 - G.logScroll)
+    local endI = math.min(total, startI + maxLines - 1)
+    local yy = areaY
+    love.graphics.setScissor(x, areaY, G.L.logW, areaH)
+    for i = startI, endI do
+        local line = log[i]
+        local col = theme.colors.text
+        if line:find("阵亡") or line:find("濒死") then col = theme.colors.bad
+        elseif line:find("回合 ────") or line:find("回合：") then col = theme.colors.accent
+        elseif line:find("游戏结束") then col = theme.colors.good
+        elseif line:find("回复") then col = theme.colors.good end
+        theme.printf(line, font, col, x + pad, yy, G.L.logW - pad * 2, "left")
+        local _, wrapped = font:getWrap(line, G.L.logW - pad * 2)
+        yy = yy + math.max(1, #wrapped) * lineH
+    end
+    love.graphics.setScissor()
+end
+
+local function drawPromptBar()
+    local req = G.req
+    local w = G.L.w
+    theme.setColor(theme.colors.bg2)
+    love.graphics.rectangle("fill", 0, 0, G.L.playW, 38)
+    theme.setColor(theme.colors.line)
+    love.graphics.line(0, 38, G.L.playW, 38)
+
+    local turnInfo = string.format("第%d回合 · %s · %s阶段",
+        G.game.turnCount,
+        G.game.current and G.game.current.name or "—",
+        ({ judge = "判定", draw = "摸牌", play = "出牌", discard = "弃牌", ["end"] = "结束",
+           setup = "准备", ready = "准备", over = "结束" })[G.game.phase] or G.game.phase)
+    theme.print(turnInfo, theme.fonts.normal, theme.colors.textDim, 12, 9)
+
+    if isHumanDecision() and req.prompt then
+        theme.printf("➤ " .. req.prompt, theme.fonts.normal, theme.colors.accent,
+            260, 9, G.L.playW - 270, "left")
+    elseif G.selecting then
+        theme.printf("➤ 选择目标（再次点击该牌取消）", theme.fonts.normal, theme.colors.accent,
+            260, 9, G.L.playW - 270, "left")
+    elseif not isHumanDecision() and G.req then
+        theme.printf("AI 行动中…", theme.fonts.normal, theme.colors.textDim, 260, 9, 200, "left")
+    end
+end
+
+local function drawButtons()
+    local mx, my = love.mouse.getPosition()
+    for _, b in ipairs(G.buttons) do
+        local hover = theme.pointIn(mx, my, b)
+        local col = b.color
+        if hover then col = b.danger and { 0.66, 0.34, 0.36 } or theme.colors.btnHover end
+        theme.setColor(col)
+        theme.rrect("fill", b.x, b.y, b.w, b.h, 6)
+        theme.setColor(theme.colors.line)
+        theme.rrect("line", b.x, b.y, b.w, b.h, 6)
+        local fnt = b.h >= 34 and theme.fonts.normal or theme.fonts.small
+        love.graphics.setFont(fnt)
+        theme.setColor(theme.colors.text)
+        love.graphics.printf(b.label, b.x, b.y + (b.h - fnt:getHeight()) / 2, b.w, "center")
+    end
+end
+
+local function cardIsCandidate(cardId)
+    local req = G.req
+    if req and req.kind == "chooseCard" and req.player.isHuman then
+        for _, id in ipairs(req.candidates) do if id == cardId then return true end end
+    end
+    return false
+end
+
+local function drawHand()
+    local me = humanPlayer()
+    local req = G.req
+    local restrict = (req and req.kind == "chooseCard" and req.player.isHuman)
+    for _, c in ipairs(me.hand) do
+        local r = G.handRects[c.id]
+        if r then
+            local selected = G.selecting and G.selecting.cardId == c.id
+            local candidate = cardIsCandidate(c.id)
+            local dim = false
+            if restrict then
+                dim = not candidate
+            elseif req and req.kind == "playAction" and req.player.isHuman then
+                dim = not cardActionable(me, c)
+            end
+            drawCardFace(c, r.x, r.y, r.w, r.h, { selected = selected, candidate = candidate, dim = dim })
+        end
+    end
+    -- my identity reminder
+    theme.print("你的身份：" .. theme.identityCN[me.identity], theme.fonts.small,
+        theme.identityColor(me.identity), 16, G.L.h - 150)
+end
+
+local function drawGameOver()
+    if G.req ~= nil or not G.game.winner then return end
+    local w, h = G.L.w, G.L.h
+    theme.setColor({ 0, 0, 0 }, 0.72)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+    local win = G.game.winner
+    local txt = ({ boss = "老板阵营胜利", rebel = "摸鱼党胜利", spy = "反骨仔（内奸）胜利",
+                   draw = "平局" })[win] or win
+    local me = humanPlayer()
+    local meWin = (win == me.identity) or (win == "boss" and (me.identity == "boss" or me.identity == "loyal"))
+    theme.printf(meWin and "🎉 你赢了！" or "你输了", theme.fonts.huge,
+        meWin and theme.colors.good or theme.colors.bad, 0, h * 0.32, w, "center")
+    theme.printf(txt, theme.fonts.big, theme.colors.text, 0, h * 0.32 + 56, w, "center")
+    theme.printf("按 R 或点击「重开」再来一局", theme.fonts.normal, theme.colors.textDim,
+        0, h * 0.32 + 104, w, "center")
+end
+
+local function drawHelp()
+    if not G.help then return end
+    local w, h = G.L.w, G.L.h
+    theme.setColor({ 0, 0, 0 }, 0.85)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+    local lines = {
+        "《职海杀》— 职场版三国杀（H 关闭帮助）",
+        "",
+        "身份：老板(公开) / 嫡系 / 摸鱼党 / 反骨仔",
+        "  · 老板+嫡系：消灭所有摸鱼党与反骨仔",
+        "  · 摸鱼党：让老板毕业(精神值归零)",
+        "  · 反骨仔：先除掉其他所有人，最后单挑老板",
+        "",
+        "基本牌：加班(杀) / 摸鱼(闪) / 画饼(桃) / 卷一下(酒)",
+        "回合：判定 → 摸2张 → 出牌 → 弃牌(至精神值) → 结束",
+        "攻击范围默认1(相邻)，装备武器可扩大；马改变距离。",
+        "",
+        "操作：点手牌出牌；需要目标时点亮的玩家；",
+        "      「技·」按钮发动主动技；「结束回合」结束出牌。",
+        "      被加班时点【摸鱼】响应，或点取消承受伤害。",
+        "顶部：人数 可切换 4–8 人重开。",
+    }
+    local y = h * 0.12
+    for _, ln in ipairs(lines) do
+        theme.printf(ln, theme.fonts.normal, theme.colors.text, w * 0.18, y, w * 0.64, "left")
+        y = y + 28
+    end
+end
+
+function love.draw()
+    if not G.game then return end
+    layout()
+    -- table felt
+    theme.setColor(theme.colors.bg2)
+    love.graphics.ellipse("fill", G.L.cx, G.L.cy, G.L.rx + 40, G.L.ry + 40)
+    theme.setColor(theme.colors.panel)
+    love.graphics.ellipse("line", G.L.cx, G.L.cy, G.L.rx + 40, G.L.ry + 40)
+    -- deck / discard info in center
+    theme.printf(string.format("牌堆 %d  弃牌 %d", #G.game.deck, #G.game.discard),
+        theme.fonts.small, theme.colors.textDim, G.L.cx - 100, G.L.cy - 8, 200, "center")
+
+    for _, p in ipairs(G.game.players) do drawPlayer(p) end
+    drawHand()
+    drawLog()
+    drawPromptBar()
+    drawButtons()
+
+    if G.flash then
+        theme.setColor({ 0, 0, 0 }, 0.6 * math.min(1, G.flash.t))
+        theme.rrect("fill", G.L.playW / 2 - 160, G.L.h * 0.5, 320, 40, 8)
+        theme.printf(G.flash.text, theme.fonts.normal, theme.colors.text,
+            G.L.playW / 2 - 160, G.L.h * 0.5 + 10, 320, "center")
+    end
+
+    drawGameOver()
+    drawHelp()
+
+    -- hint bottom-left
+    theme.print("H 帮助", theme.fonts.tiny, theme.colors.textDim, 8, G.L.h - 16)
+end
+
+----------------------------------------------------------------------
+-- input
+----------------------------------------------------------------------
+-- can this hand card be played in some way right now (natively or via a conversion)?
+function cardActionable(me, c)
+    if G.game:canPlayInPhase(me, c) then return true end
+    for _, asName in ipairs(G.game:convertOptions(me, c)) do
+        if G.game:canPlayConverted(me, c, asName) then return true end
+    end
+    return false
+end
+
+-- commit a play: asName=nil plays natively, otherwise plays the card as the converted trick/加班.
+function commitPlay(c, asName)
+    local me = humanPlayer()
+    local effName = asName or c.name
+    local effCard = asName and G.game:effectiveCard(c, asName) or c
+    local targeted = TARGETED[effName] == true
+    if not targeted then
+        step({ type = "playCard", cardId = c.id, targetIds = {}, as = asName })
+        return
+    end
+    local targets = G.game:validTargets(me, effCard)
+    if #targets == 0 then
+        flash("没有合法目标")
+    elseif #targets == 1 and not (effName == "画饼" and targets[1].id ~= me.id) then
+        -- 画饼 onto someone else always asks first (so you can't mis-click a heal to an enemy)
+        step({ type = "playCard", cardId = c.id, targetIds = { targets[1].id }, as = asName })
+    else
+        G.selecting = { cardId = c.id, asName = asName, targetIds = {} }
+        for _, t in ipairs(targets) do G.selecting.targetIds[#G.selecting.targetIds + 1] = t.id end
+    end
+end
+
+function tryPlayCard(c)
+    local me = humanPlayer()
+    local opts = {}
+    if G.game:canPlayInPhase(me, c) then
+        opts[#opts + 1] = { label = (c.type == "equip" and "装备" or "使用") .. c.name, asName = nil }
+    end
+    for _, asName in ipairs(G.game:convertOptions(me, c)) do
+        if G.game:canPlayConverted(me, c, asName) then
+            opts[#opts + 1] = { label = "当作【" .. asName .. "】使用", asName = asName }
+        end
+    end
+    if #opts == 0 then
+        flash("该牌现在无法使用")
+    elseif #opts == 1 then
+        commitPlay(c, opts[1].asName)
+    else
+        G.cardMenu = { cardId = c.id, options = opts }
+    end
+end
+
+function love.mousepressed(mx, my, button)
+    if button ~= 1 or not G.game then return end
+    layout()
+
+    -- buttons first (includes the card-conversion menu options)
+    for _, b in ipairs(G.buttons) do
+        if theme.pointIn(mx, my, b) then b.action() return end
+    end
+
+    if G.help then return end
+
+    -- a click that missed the open conversion menu closes it
+    if G.cardMenu then G.cardMenu = nil; return end
+
+    local req = G.req
+
+    -- target selection during play phase
+    if G.selecting then
+        for _, id in ipairs(G.selecting.targetIds) do
+            local r = G.playerRects[id]
+            if r and theme.pointIn(mx, my, r) then
+                step({ type = "playCard", cardId = G.selecting.cardId,
+                    targetIds = { id }, as = G.selecting.asName })
+                return
+            end
+        end
+        -- click the selected card again to cancel
+        local hr = G.handRects[G.selecting.cardId]
+        if hr and theme.pointIn(mx, my, hr) then G.selecting = nil return end
+        return
+    end
+
+    if not (req and req.player and req.player.isHuman) then return end
+
+    if req.kind == "playAction" then
+        for _, c in ipairs(humanPlayer().hand) do
+            local r = G.handRects[c.id]
+            if r and theme.pointIn(mx, my, r) then tryPlayCard(c) return end
+        end
+    elseif req.kind == "chooseCard" then
+        for _, id in ipairs(req.candidates) do
+            local r = G.handRects[id]
+            if r and theme.pointIn(mx, my, r) then step(id) return end
+        end
+    elseif req.kind == "chooseTarget" then
+        for _, id in ipairs(req.candidates) do
+            local r = G.playerRects[id]
+            if r and theme.pointIn(mx, my, r) then step(id) return end
+        end
+    end
+end
+
+function love.wheelmoved(_, dy)
+    G.logScroll = math.max(0, G.logScroll + dy * 3)
+end
+
+function love.keypressed(key)
+    if key == "h" then G.help = not G.help
+    elseif key == "r" then newGame(G.numPlayers)
+    elseif key == "escape" then
+        if G.help then G.help = false else love.event.quit() end
+    end
+end
+
+function love.resize() end
