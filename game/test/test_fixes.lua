@@ -729,5 +729,27 @@ do
     check("the red card was spent as 画饼", #wu.hand == 0)
 end
 
+print("[31] 年限护身 (吴年限): a RED judgment makes the damage source discard 1; a BLACK one does not")
+do
+    -- RED judge → source loses a card. The judge() pops the deck's last card, so seeding
+    -- the deck with a single known card makes the flip deterministic.
+    local g = neutralGame(61, { "boss", "loyal", "rebel", "spy" })
+    local wu = withChar(g, 22, 1); wu.identity = "loyal"; wu.hp = 4
+    local src = g.players[3]; src.hand = { mkCard("加班"), mkCard("摸鱼") }
+    g.deck = { mkCard("画饼", "heart") }        -- RED judgment card
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("年限护身") ~= nil end
+    g:dealDamage({ target = wu, source = src, amount = 1, card = mkCard("加班") })
+    check("RED judgment: the damage source discards 1 card", #src.hand == 1, "src.hand=" .. #src.hand)
+
+    -- BLACK judge → no discard.
+    local g2 = neutralGame(62, { "boss", "loyal", "rebel", "spy" })
+    local wu2 = withChar(g2, 22, 1); wu2.identity = "loyal"; wu2.hp = 4
+    local src2 = g2.players[3]; src2.hand = { mkCard("加班"), mkCard("摸鱼") }
+    g2.deck = { mkCard("加班", "spade") }       -- BLACK judgment card
+    g2.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("年限护身") ~= nil end
+    g2:dealDamage({ target = wu2, source = src2, amount = 1, card = mkCard("加班") })
+    check("BLACK judgment: the source keeps both cards", #src2.hand == 2, "src2.hand=" .. #src2.hand)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
