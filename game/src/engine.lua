@@ -660,13 +660,34 @@ function Engine:killPlayer(target, source)
     target.revealed = true
     self:logmsg("☠ %s【%s · %s·%s】阵亡！", target.name, self.IDENTITY_CN[target.identity],
         target.char.title, target.char.name)
-    local epitaph = ({
-        boss  = "公司就此关张，大厦倾颓 🏚",
-        loyal = "尽忠到最后一刻，奈何大势已去 🥀",
-        rebel = "摸鱼一时爽，被优化火葬场 🔥",
-        spy   = "反骨仔的算盘，终究落了空 🧮",
+    local pool = ({
+        boss  = {
+            "公司就此关张，大厦倾颓 🏚",
+            "资金链断裂，黯然退场 💸",
+            "曾经呼风唤雨，如今人去楼空 🌫",
+        },
+        loyal = {
+            "尽忠到最后一刻，奈何大势已去 🥀",
+            "陪老板走到终点，无怨无悔 🤝",
+            "鞠躬尽瘁，工牌还热着呢 🕯",
+        },
+        rebel = {
+            "摸鱼一时爽，被优化火葬场 🔥",
+            "带薪划水的日子，到此为止 🏊",
+            "终究没能熬到下班 🌙",
+        },
+        spy   = {
+            "反骨仔的算盘，终究落了空 🧮",
+            "两头下注，结果两头落空 🎲",
+            "想当渔翁，却成了那条鱼 🐟",
+        },
     })[target.identity]
-    if epitaph then self:logmsg("　%s", epitaph) end
+    if pool then
+        -- vary the line per game/seat WITHOUT consuming the game rng (keeps headless
+        -- outcomes byte-identical): index off deterministic, already-advanced state.
+        local idx = ((self.turnCount or 0) + (target.seat or 1)) % #pool + 1
+        self:logmsg("　%s", pool[idx])
+    end
     self:emit({ type = "death", target = target.id })
 
     self:trig(target, "onDeath", source)
