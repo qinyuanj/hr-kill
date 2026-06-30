@@ -527,6 +527,7 @@ local function drawLog()
     local maxScroll = math.max(0, totalRows - maxRows)
     G.logMaxScroll = maxScroll
     local scroll = math.max(0, math.min(G.logScroll or 0, maxScroll))
+    G.logScroll = scroll   -- write the clamped value back so a shrink can't strand it stale-high
 
     -- Top visible global row; locate its entry and how many of that entry's rows sit above
     -- the viewport (rendered at a negative offset and clipped by the scissor).

@@ -805,6 +805,9 @@ function Engine:performAttack(source, target, opts)
             return false
         end
         target = ctx.target   -- a transfer (这是前端问题) may have changed the target
+        -- 这个很简单's turn-long no-dodge lock is applied HERE, after transfers/cancels resolve,
+        -- so it lands on whoever is actually hit — not the original target that deflected it.
+        if ctx.lockNoDodge then target._noDodgeTurn = self.turnCount end
     end
     self:emit({ type = "attack", source = source.id, target = target.id })
     if opts.card and opts.card.subtype == "attack" then

@@ -57,10 +57,11 @@ C.list = {
                 if game:askYesNo(p, "发动【这个很简单】令目标本回合无法【摸鱼】？", true) then
                     p.used.thisIsEasy = true
                     ctx.noDodge = true
-                    -- 本回合无法【摸鱼】: tag the target by turn id so LATER 加班 this turn (福报/
-                    -- weapon) also can't be dodged, not just the current one. Auto-expires when
-                    -- turnCount advances, so no cleanup needed.
-                    if ctx.target then ctx.target._noDodgeTurn = game.turnCount end
+                    -- 本回合无法【摸鱼】: lock the target for the whole turn so LATER 加班 (福报/
+                    -- weapon) also can't be dodged. The durable tag is applied by performAttack
+                    -- AFTER target resolution, so it follows whoever is actually hit (e.g. the
+                    -- substitute after a 这是前端问题 transfer), not the original/deflecting target.
+                    ctx.lockNoDodge = true
                     game:logmsg("%s【这个很简单】：目标本回合无法【摸鱼】", p.name)
                 end
             end,

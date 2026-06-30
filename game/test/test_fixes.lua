@@ -628,5 +628,31 @@ do
     check("the attacker is never a deflect substitute", not hasAttacker)
 end
 
+print("[25] 这个很简单 + 这是前端问题: the no-dodge lock follows the player actually HIT, not the deflector")
+do
+    local g = newGame(6, 31)
+    local zh = withChar(g, 1, 1)       -- 张需求 (attacker, has 这个很简单)
+    local libk = withChar(g, 2, 2)     -- 李接口 (original target, will 流离-deflect)
+    local B = g.players[3]             -- substitute (adjacent to 李接口, in range 1)
+    B.char = { name = "替身", title = "", faction = "", maxHp = 5, skills = {} }
+    for _, q in ipairs(g.players) do q.hp = 5; q.maxHp = 5 end
+    g.current = zh
+    g.turnCount = 9
+    zh.used = {}; libk.used = {}
+    g.askYesNo = function(_, _, prompt, aiDefault)
+        if prompt and prompt:find("这个很简单") then return true end
+        return aiDefault and true or false
+    end
+    g.askTarget = function(_, _, _, prompt)
+        if prompt and prompt:find("前端问题") then return B end   -- 李接口 deflects onto B
+        return nil
+    end
+    g:performAttack(zh, libk, { card = mkCard("加班") })
+    check("the substitute that was actually hit is locked out of 摸鱼", B._noDodgeTurn == g.turnCount,
+        "B.tag=" .. tostring(B._noDodgeTurn) .. " turn=" .. g.turnCount)
+    check("the deflector (李接口) that ESCAPED is NOT locked", libk._noDodgeTurn ~= g.turnCount,
+        "libk.tag=" .. tostring(libk._noDodgeTurn))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
