@@ -966,17 +966,24 @@ do
     check("hp5 vs 1-damage: dodge not forced (nil or the card, never a crash)",
         a3 == nil or a3 == d3.id, "a3=" .. tostring(a3))
 
-    -- Integration: a wine-boosted 加班 vs an unarmored hp2 target — the engine threads amount=2
-    -- into tryDodge, so the AI dodges and survives instead of dying to the under-dodge.
+    -- Integration: a wine-boosted 加班 vs an unarmored hp2 target. Intercept the dodge request
+    -- to assert the ENGINE threaded the effective incoming amount (2) into it — this is nil
+    -- pre-fix, so the assertion is load-bearing regardless of the (pre-fix probabilistic) dodge
+    -- roll. Then confirm the AI force-dodged and survived (the ai.lua half of the fix).
     local g2 = neutralGame(105, { "boss", "rebel", "loyal", "spy" })
     local atk, def = g2.players[1], g2.players[2]
     atk.flags.wine = true
     def.hp = 2; def.hand = { mkCard("摸鱼") }
-    g2.ask = function(_, req) return AI.answer(g2, req) end
+    local seenAmount = "unset"
+    g2.ask = function(_, req)
+        if req.kind == "chooseCard" and req.hint == "dodge" then seenAmount = req.amount end
+        return AI.answer(g2, req)
+    end
     local landed = g2:performAttack(atk, def, { card = mkCard("加班") })
-    check("wine-boosted lethal 加班 at hp2 is dodged (target survives, dodge spent)",
-        (not landed) and def.hp == 2 and #def.hand == 0,
-        "landed=" .. tostring(landed) .. " def.hp=" .. def.hp .. " hand=" .. #def.hand)
+    check("engine threads the wine-boosted amount=2 into the dodge request, AI force-dodges the lethal hit",
+        seenAmount == 2 and (not landed) and def.hp == 2 and #def.hand == 0,
+        "seenAmount=" .. tostring(seenAmount) .. " landed=" .. tostring(landed) ..
+        " def.hp=" .. def.hp .. " hand=" .. #def.hand)
 end
 
 print("[44] 背锅侠 (田便宜) is identity-honest: body-blocks only the boss, only for boss-team")
