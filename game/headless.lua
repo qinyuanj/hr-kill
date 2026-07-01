@@ -43,12 +43,25 @@ local function playOne(seed, players)
         end
         local req = game:resume(answer)
         -- Only assert at clean boundaries: a top-level play action, or game end.
-        -- Mid-skill asks may legitimately hold cards "in flight" in local variables.
+        -- Mid-skill asks may legitimately hold cards "in flight" in local variables,
+        -- and a player can be transiently alive-with-hp<=0 mid dying-cascade — neither
+        -- state coincides with a playAction yield or game end.
         if req == nil or req.kind == "playAction" then
             local tot = totalCards(game)
             if tot ~= EXPECTED then
                 error(string.format("card conservation broken: %d != %d (step %d, turn %d)",
                     tot, EXPECTED, steps, game.turnCount))
+            end
+            -- HP-bounds invariant: the heal-cap + settled dying-cascade guarantee that at any
+            -- clean boundary every ALIVE player has 1<=hp<=maxHp and every DEAD player has hp<=0.
+            for _, p in ipairs(game.players) do
+                if p.alive and not (p.hp >= 1 and p.hp <= p.maxHp) then
+                    error(string.format("hp bounds broken: %s alive hp=%d maxHp=%d (step %d, turn %d)",
+                        p.name, p.hp, p.maxHp, steps, game.turnCount))
+                elseif (not p.alive) and p.hp > 0 then
+                    error(string.format("hp bounds broken: %s dead but hp=%d (step %d, turn %d)",
+                        p.name, p.hp, steps, game.turnCount))
+                end
             end
         end
         if req == nil then break end
