@@ -339,7 +339,14 @@ UI 目标高亮/点击派发、出牌合法性/相位闸门、响应弹窗；基
   「兼容IE」黑牌当【摸鱼】闪避、吴报销「下月打款」红牌当【画饼】濒死自救（viewAs 系统是多角色防御/回血的
   命门，此前只测了 convert 路径未测 viewAs）。
 - `lua test/log_scroll.lua` 战报按行预算、最新行不被裁切的回归测试。
-- `lua headless.lua 1500 <人数> <seed>` 7500 局零报错、零超时、卡牌守恒不变式全程成立。
+- `lua headless.lua 1500 <人数> <seed>` 7500 局零报错、零超时，且**两条不变式全程成立**：
+  ①卡牌守恒（任意边界全场 108 张）；②精神值边界（存活者 1≤hp≤maxHp、阵亡者 hp≤0——回血封顶＋
+  濒死级联结算的兜底，能抓住回血溢出/濒死-阵亡流程/maxHp 处理的回归）。
+- `lua test/win_invariant.lua <每人数局数> <seed>` 胜负判定不变式 soak：数千局断言「胜方 ⟺ 老板生死」
+  始终自洽（老板胜必老板活、反贼/反骨仔胜必老板亡、反骨仔胜必唯一幸存），死亡级联判定回归的兜底。
+- `lua test/determinism.lua <每人数局数> <seed>` 确定性 soak：同种子两遍对局产出**逐字节相同**的
+  完整战报＋胜方＋终局棋盘，守住「引擎＝种子的纯函数」，杜绝 `os.time`/`math.random`/哈希序泄漏进玩法
+  （用故障注入验证过：往 `logmsg` 塞一次 `math.random` 即被判 MISMATCH）。
 - `lua test/ui_smoke.lua 9000` UI 代码路径（布局/绘制/输入派发）零崩溃。
 - `lua test/balance.lua 500 <seed>` 平衡性回归（各人数 44–51%、总体 ~47%）。
 - `lua test/char_winrate.lua [每人数局数] [seed]` 逐角色胜率分析工具（技能组强弱，已与身份解耦）。
