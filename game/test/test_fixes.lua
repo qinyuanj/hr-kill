@@ -1047,5 +1047,28 @@ do
         "kills=" .. atk.stats.kills .. " atk.alive=" .. tostring(atk.alive) .. " luo.alive=" .. tostring(luo.alive))
 end
 
+print("[47] 面试官 AI converts a black card to PUA (completes AI 牌→牌 support); never onto its own boss")
+do
+    -- Case A: a rebel 面试官 holding only a black 背锅 (unplayable natively, not equip, no 加班)
+    -- converts it to PUA on an enemy — the third and last AI conversion (装备→加班 / OKR→升职 already
+    -- wired). 背锅 is black => convertible; 摸鱼/画饼/卷一下 are red so a defensive card is never grabbed.
+    local g = neutralGame(110, { "rebel", "boss", "loyal", "spy" })
+    local zhong = withChar(g, 16, 1); zhong.hand = { mkCard("背锅", "spade") }
+    local a = AI.answer(g, { kind = "playAction", player = zhong })
+    check("rebel 面试官 plays the black card AS PUA on an enemy",
+        a and a.type == "playCard" and a.as == "PUA" and a.cardId == zhong.hand[1].id
+            and a.targetIds and #a.targetIds == 1 and a.targetIds[1] ~= zhong.id,
+        "action=" .. (a and (tostring(a.type) .. "/as=" .. tostring(a.as)) or "nil"))
+
+    -- Case B: a LOYAL 面试官 must never aim the converted PUA at its own public boss.
+    local g2 = neutralGame(111, { "loyal", "boss", "rebel", "spy" })
+    local zhong2 = withChar(g2, 16, 1); zhong2.hand = { mkCard("背锅", "spade") }
+    local boss2 = g2.players[2]
+    local b = AI.answer(g2, { kind = "playAction", player = zhong2 })
+    check("loyal 面试官's converted PUA never targets its own boss",
+        b and b.type == "playCard" and b.as == "PUA" and b.targetIds[1] ~= boss2.id,
+        "action=" .. (b and (tostring(b.type) .. "/target=" .. tostring(b.targetIds and b.targetIds[1])) or "nil"))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

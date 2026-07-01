@@ -269,11 +269,30 @@ local function planAction(game, me)
     -- rather than forfeiting the card until first blood.
     local function useTrickOn(name, hint, damaging)
         local c = firstPlayable(game, me, name)
-        if not c then return nil end
-        local tg = game:validTargets(me, c)
+        local asName = nil
+        if not c then
+            -- No native card: fall back to the CHEAPEST hand card this character can convert into
+            -- `name` (面试官 回去等通知: 黑牌→PUA). Lowest cardValue so we never burn a card we'd
+            -- rather keep — and note 摸鱼/画饼/卷一下 are all red, so blackBasic can only ever grab a
+            -- surplus black 加班/trick/equip, never a defensive card. Only 面试官+PUA has a matching
+            -- convert rule today; every other trick name has none, so this is a no-op for them.
+            local bestC, bestV
+            for _, hc in ipairs(me.hand) do
+                for _, opt in ipairs(game:convertOptions(me, hc)) do
+                    if opt == name and game:canPlayConverted(me, hc, name) then
+                        local v = cardValue(game, me, hc)
+                        if not bestV or v < bestV then bestC, bestV = hc, v end
+                    end
+                end
+            end
+            if not bestC then return nil end
+            c, asName = bestC, name
+        end
+        local effCard = asName and game:effectiveCard(c, asName) or c
+        local tg = game:validTargets(me, effCard)
         if #tg == 0 then
             -- aoe/self trick: just use it
-            return { type = "playCard", cardId = c.id, targetIds = {} }
+            return { type = "playCard", cardId = c.id, targetIds = {}, as = asName }
         end
         -- A boss-aligned AI must never aim ANY offensive trick at its own (public) boss.
         local bossId = game:bossPlayer().id
@@ -292,7 +311,7 @@ local function planAction(game, me)
         end
         if #safe == 0 then return nil end
         local t = bestTarget(game, me, safe, hint or "enemy")
-        if t then return { type = "playCard", cardId = c.id, targetIds = { t.id } } end
+        if t then return { type = "playCard", cardId = c.id, targetIds = { t.id }, as = asName } end
         return nil
     end
 
