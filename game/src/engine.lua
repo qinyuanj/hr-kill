@@ -586,6 +586,21 @@ function Engine:heal(player, amount, reason)
 end
 
 function Engine:enterDying(target, source)
+    -- Depth-guard the WHOLE dying cascade. A dying player's onDying hook can deal lethal
+    -- damage to others (罗法援 劳动仲裁 / 王兼容 样式崩了) — nesting more enterDying/killPlayer —
+    -- AND the dying player itself may be RESCUED afterward (its onDying fires before its own
+    -- rescue loop). So no checkWin may COMMIT a winner until the OUTERMOST enterDying has fully
+    -- unwound: only then is every death final and every rescue resolved, i.e. the board is
+    -- settled. checkWin bails while dyingDepth>0 (see checkWin), and this wrapper runs the one
+    -- authoritative check when depth returns to 0. (Without this, a nested checkWin could latch
+    -- a winner off a transient snapshot that a later same-cascade rescue then overturns.)
+    self.dyingDepth = (self.dyingDepth or 0) + 1
+    self:_enterDying(target, source)
+    self.dyingDepth = self.dyingDepth - 1
+    if self.dyingDepth == 0 then self:checkWin() end
+end
+
+function Engine:_enterDying(target, source)
     self:trig(target, "onDying", source)
     if target.hp > 0 or not target.alive then return end
     self:logmsg("⚠ %s 进入濒死（burnout 边缘）！", target.name)
@@ -691,12 +706,7 @@ function Engine:killPlayer(target, source)
     end
     self:emit({ type = "death", target = target.id })
 
-    -- Once the game is already decided — e.g. an EARLIER death in this same cascade locked
-    -- the winner via a nested checkWin — skip post-game economy. onDeath draws (期权激励),
-    -- kill rewards and the 反骨仔 heal would otherwise mutate a finished board and pollute
-    -- the end-game report (a "kill" and 3 drawn cards credited after the match is over).
-    local decided = self.winner ~= nil
-    if not decided then self:trig(target, "onDeath", source) end
+    self:trig(target, "onDeath", source)
 
     -- move all cards to discard
     for _, c in ipairs(target.hand) do self:toDiscard(c) end
@@ -705,8 +715,10 @@ function Engine:killPlayer(target, source)
     for _, c in ipairs(target.delayed) do self:toDiscard(c) end
     target.delayed = {}
 
-    -- rewards / punishment
-    if not decided and source and source.alive and source.id ~= target.id then
+    -- rewards / punishment. Note: during a death CASCADE the winner is not yet committed
+    -- (checkWin is deferred to the outermost enterDying — see enterDying/checkWin), so every
+    -- death in the cascade still resolves its economy normally; nothing runs "after" the win.
+    if source and source.alive and source.id ~= target.id then
         source.stats.kills = source.stats.kills + 1
         if target.identity == "rebel" then
             self:logmsg("%s 击杀【摸鱼党】，摸 3 张牌", source.name)
@@ -730,14 +742,14 @@ end
 
 function Engine:checkWin()
     if self.winner then return end
-    -- A player still inside the dying window (hp<=0 but killPlayer not yet reached) is
-    -- doomed: its alive flag only flips in killPlayer (line ~659). checkWin can fire
-    -- re-entrantly from a NESTED killPlayer during another player's onDying cascade
-    -- (e.g. 罗法援 劳动仲裁 / 王兼容 样式崩了 deal lethal damage from within onDying), and
-    -- whatever it decides is latched by the early-return above. So count a participant as
-    -- live only when alive AND hp>0 — this makes the verdict match the SETTLED board no
-    -- matter how deep the cascade, instead of a transient snapshot. (No effect in normal
-    -- play: a living player always has hp>0; only a mid-cascade victim differs.)
+    -- Never COMMIT a winner while a death cascade is still unwinding. A nested killPlayer can
+    -- reach here mid-cascade (a dying player's onDying killing others), but the board is not
+    -- yet settled: a player counted dead now may still be RESCUED, or another may still die,
+    -- before the outermost enterDying returns. enterDying re-invokes checkWin exactly once when
+    -- dyingDepth hits 0 — on the fully-settled board — so the verdict can never go stale.
+    if (self.dyingDepth or 0) > 0 then return end
+    -- Defense in depth: even at depth 0, count a participant as live only when alive AND hp>0,
+    -- so a player in an unresolved dying window is never miscounted as a survivor/threat.
     local function live(p) return p.alive and p.hp > 0 end
     local boss = self:bossPlayer()
     if not live(boss) then
@@ -826,6 +838,12 @@ function Engine:performAttack(source, target, opts)
         -- 这个很简单's turn-long no-dodge lock is applied HERE, after transfers/cancels resolve,
         -- so it lands on whoever is actually hit — not the original target that deflected it.
         if ctx.lockNoDodge then target._noDodgeTurn = self.turnCount end
+        -- SIMPLIFICATION: a 这是前端问题 deflection does NOT re-fire the SUBSTITUTE's own
+        -- onTargetedByAttack (林简历 面议 cancel / 徐带薪 老板来了 -1). onTargetedByAttack is a
+        -- one-shot resolution hook fired once on the original target; only DURABLE effects
+        -- (armor, 背锅 redirect, the no-dodge lock) follow the substitute. Re-firing reactions
+        -- on transfer would need loop-guarding (a chain of 李接口 deflections) for a rare case,
+        -- so the substitute keeps its dodge but not its "成为目标" reaction. Intentional.
     end
     self:emit({ type = "attack", source = source.id, target = target.id })
     if opts.card and opts.card.subtype == "attack" then
@@ -849,11 +867,14 @@ function Engine:performAttack(source, target, opts)
     -- so the reduction follows whoever actually takes the hit (not the original target).
     self:dealDamage(ctx)
 
-    -- weapon on-hit effects: only for a real 加班 card that actually DEALT damage (ctx.dealt
-    -- is set in dealDamage) — armor / 老板来了 reducing the hit to 0 fully mitigates, so
-    -- MacBook Pro / 工牌 do not fire, matching onTakeDamage which also skips a 0-damage hit.
-    if opts.card and ctx.dealt and target.alive and source.alive and source.equip.weapon then
-        self:weaponOnHit(source, target)
+    -- weapon on-hit effects. Two gates: (1) a real 加班 card that actually DEALT damage
+    -- (ctx.dealt, set in dealDamage) — armor / 老板来了 reducing the hit to 0 fully mitigates,
+    -- so MacBook Pro / 工牌 don't fire, matching onTakeDamage skipping a 0-damage hit. (2) they
+    -- must follow whoever ACTUALLY took the hit: 背锅/背锅侠 redirect ctx.target inside dealDamage,
+    -- so re-read it here (the pre-dealDamage `target` is the deflector) — mirrors the armor note above.
+    local hitTarget = ctx.target
+    if opts.card and ctx.dealt and hitTarget.alive and source.alive and source.equip.weapon then
+        self:weaponOnHit(source, hitTarget)
     end
     return true
 end

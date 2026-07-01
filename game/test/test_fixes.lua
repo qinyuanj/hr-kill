@@ -799,10 +799,11 @@ do
         g.winner == "spy" and spy.alive and not boss.alive and not luo.alive, "winner=" .. tostring(g.winner))
 end
 
-print("[35] no post-win economy: a death resolved AFTER the winner is locked pays no 击杀奖励")
+print("[35] cascade win-timing: 王兼容 样式崩了 kills the boss first -> rebel wins; kill economy still resolves")
 do
-    -- 李接口(loyal) kills 王兼容(rebel); 样式崩了 kills the boss first, locking winner=rebel. 王兼容's
-    -- own (now post-win) death must NOT pay the loyal killer the 击杀【摸鱼党】 draw-3.
+    -- 李接口(loyal) deals lethal to 王兼容(rebel); 王兼容's onDying 样式崩了 kills the boss. Because
+    -- checkWin is DEFERRED to the outermost enterDying, the winner (rebel — boss dead) is committed
+    -- only after the whole cascade settles, and 李接口's legitimate kill of a 摸鱼党 still draws 3.
     local g = neutralGame(83, { "boss", "loyal", "rebel", "spy" })
     g.players[4].alive = false
     local boss = g.players[1]; boss.hp = 1; boss.hand = {}
@@ -812,8 +813,10 @@ do
     g.askTarget = function(_, _, _, prompt) if prompt and prompt:find("样式崩了") then return boss end end
     g.askCard = function() return nil end
     g:dealDamage({ target = wang, source = li, amount = 1, card = mkCard("加班") })
-    check("winner=rebel and the loyal killer drew NO post-win 击杀奖励",
-        g.winner == "rebel" and #li.hand == 0, "winner=" .. tostring(g.winner) .. " li.hand=" .. #li.hand)
+    check("boss dies first in the cascade -> winner is the rebel team", g.winner == "rebel",
+        "winner=" .. tostring(g.winner))
+    check("the kill economy resolves normally (winner committed only at cascade end)", #li.hand == 3,
+        "li.hand=" .. #li.hand)
 end
 
 print("[36] weapon on-hit gates on damage dealt: armor reducing 加班 to 0 stops the MacBook Pro discard")
@@ -842,6 +845,59 @@ do
     check("empty pool -> judge nil -> passes, no hp loss (no self-judge)", p.hp == 4, "p.hp=" .. p.hp)
     check("the 试用期考核 card lands in discard exactly once", #g.discard == 1 and g.discard[1] == exam,
         "discard=" .. #g.discard)
+end
+
+print("[38] revive-after-latch: a dying spy whose 劳动仲裁 kills the boss then self-rescues WINS as sole survivor")
+do
+    -- The spy takes a lethal hit; its onDying 劳动仲裁 kills the boss (a nested death) BEFORE the
+    -- spy's own rescue loop. If checkWin committed there it would (correctly per that snapshot) not
+    -- see the spy as live. But the spy then self-rescues with 画饼 and is the true sole survivor.
+    -- Deferral makes the winner reflect that settled board: spy, not a stale rebel latch.
+    local g = neutralGame(86, { "boss", "spy", "rebel", "loyal" })
+    g.players[3].alive = false; g.players[4].alive = false
+    local boss = g.players[1]; boss.hp = 2; boss.hand = {}
+    local luo = withChar(g, 24, 2); luo.identity = "spy"; luo.hp = 1
+    luo.hand = { mkCard("画饼", "heart") }
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("劳动仲裁") ~= nil end
+    g.askCard = function(_, _, cands, _, _, hint) if hint == "selfSave" then return cands[1] end end
+    g:dealDamage({ target = luo, source = boss, amount = 1, card = mkCard("加班") })
+    check("boss dead + spy revived as sole survivor -> winner=spy",
+        g.winner == "spy" and luo.alive and not boss.alive,
+        "winner=" .. tostring(g.winner) .. " spy.alive=" .. tostring(luo.alive))
+end
+
+print("[39] revive-after-latch: a dying rebel that self-rescues after 劳动仲裁 kills the attacker keeps the game LIVE")
+do
+    -- Symmetric boss-alive case: the rebel's 劳动仲裁 kills the loyal attacker, then the rebel
+    -- self-rescues. Boss + a live rebel remain -> the game must NOT prematurely commit a boss win.
+    local g = neutralGame(87, { "boss", "rebel", "loyal", "spy" })
+    g.players[4].alive = false
+    local boss = g.players[1]; boss.hp = 5; boss.hand = {}
+    local luo = withChar(g, 24, 2); luo.identity = "rebel"; luo.hp = 1
+    luo.hand = { mkCard("画饼", "heart") }
+    local src = g.players[3]; src.hp = 2                          -- loyal attacker, dies to 劳动仲裁
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("劳动仲裁") ~= nil end
+    g.askCard = function(_, _, cands, _, _, hint) if hint == "selfSave" then return cands[1] end end
+    g:dealDamage({ target = luo, source = src, amount = 1, card = mkCard("加班") })
+    check("rebel survives + boss alive -> game continues (winner not committed to boss)",
+        g.winner == nil and luo.alive and not src.alive and boss.alive,
+        "winner=" .. tostring(g.winner) .. " rebel.alive=" .. tostring(luo.alive))
+end
+
+print("[40] weapon on-hit follows a 背锅 redirect: MacBook Pro discards the ACTUAL victim's card, not the deflector's")
+do
+    local g = neutralGame(88, { "boss", "rebel", "loyal", "spy" })
+    local atk = g.players[1]; atk.equip.weapon = mkCard("MacBook Pro")
+    local b = g.players[2]; b.hp = 5; b.hand = { mkCard("背锅"), mkCard("摸鱼") }
+    local c = g.players[3]; c.hp = 5; c.hand = { mkCard("摸鱼"), mkCard("画饼") }
+    g.askYesNo = function() return true end                       -- use 背锅; then MacBook Pro discard: yes
+    g.askTarget = function(_, _, _, prompt) if prompt and prompt:find("背锅") then return c end end
+    g.askCard = function() return nil end                          -- no dodge
+    g:performAttack(atk, b, { card = mkCard("加班") })
+    check("the redirected victim C took the hit, deflector B did not", c.hp == 4 and b.hp == 5,
+        "c.hp=" .. c.hp .. " b.hp=" .. b.hp)
+    check("MacBook Pro discarded from C (real victim), leaving B's non-背锅 card intact",
+        #c.hand == 1 and #b.hand == 1, "c.hand=" .. #c.hand .. " b.hand=" .. #b.hand)
 end
 
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
