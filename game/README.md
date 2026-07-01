@@ -76,6 +76,8 @@ lua test/ui_smoke.lua 9000
 - `test/test_fixes.lua`：106 项断言，锁定历次评审/查错修复的每个 bug。
 - `test/win_invariant.lua`：胜负判定不变式 soak——数千局全 AI 对局中断言「胜方 ⟺ 老板生死」始终自洽
   （老板胜必老板活、反贼/反骨仔胜必老板亡、反骨仔胜必其为唯一幸存者），死亡级联判定回归的兜底。
+- `test/determinism.lua`：确定性 soak——同一种子必产出逐字节相同的对局（完整战报＋胜方＋终局棋盘），
+  守住「引擎是种子的纯函数」这一性质（复盘/调试/平衡测量的地基），杜绝 `os.time`/`math.random`/哈希序泄漏进玩法。
 - `test/log_scroll.lua`：战报面板按渲染行预算、最新消息不被裁切的回归测试。
 - `ui_smoke.lua`：9000 帧覆盖布局/绘制/输入派发零崩溃。
 - `test/char_winrate.lua`：逐角色胜率分析（技能组强弱，已与身份解耦；纯数据、不改数值）。
