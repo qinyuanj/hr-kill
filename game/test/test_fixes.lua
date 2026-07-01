@@ -900,5 +900,23 @@ do
         #c.hand == 1 and #b.hand == 1, "c.hand=" .. #c.hand .. " b.hand=" .. #b.hand)
 end
 
+print("[41] revive-after-latch (ally rescue): a boss 罗法援 that kills the last threat then is RESCUED wins")
+do
+    -- Boss=罗法援(hp1); its 劳动仲裁 kills the lone rebel (last threat) mid-dying, then a loyal ally
+    -- rescues the boss with 画饼. Boss survives + no threat left -> boss win, not a stale rebel latch.
+    local g = neutralGame(89, { "boss", "rebel", "loyal", "spy" })
+    g.players[4].alive = false
+    local boss = withChar(g, 24, 1); boss.identity = "boss"; boss.hp = 1; boss.hand = {}
+    local reb = g.players[2]; reb.hp = 2; reb.hand = {}
+    local loy = g.players[3]; loy.hp = 5; loy.hand = { mkCard("画饼", "heart") }
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("劳动仲裁") ~= nil end
+    g.askCard = function(_, _, cands, _, _, _, extra)
+        if extra and extra.dyingId == boss.id then return cands[1] end   -- ally rescues ONLY the boss
+    end
+    g:dealDamage({ target = boss, source = reb, amount = 1, card = mkCard("加班") })
+    check("boss survives + all threats dead -> winner=boss", g.winner == "boss" and boss.alive and not reb.alive,
+        "winner=" .. tostring(g.winner) .. " boss.alive=" .. tostring(boss.alive))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)
