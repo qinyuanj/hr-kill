@@ -5,6 +5,7 @@ package.path = "./?.lua;" .. package.path
 local Engine = require("src.engine")
 local Chars  = require("src.characters")
 local cards  = require("src.cards")
+local AI     = require("src.ai")
 
 local pass, fail = 0, 0
 local function check(name, cond, extra)
@@ -916,6 +917,91 @@ do
     g:dealDamage({ target = boss, source = reb, amount = 1, card = mkCard("加班") })
     check("boss survives + all threats dead -> winner=boss", g.winner == "boss" and boss.alive and not reb.alive,
         "winner=" .. tostring(g.winner) .. " boss.alive=" .. tostring(boss.alive))
+end
+
+print("[42] redirect never own-goals onto the boss (bestTarget fails CLOSED for boss-team)")
+do
+    -- Unit: a boss-team member asked for an ENEMY target with ONLY its own boss on offer must
+    -- decline (nil), not hand the boss back. Pre-fix `return best or candidates[1]` failed open.
+    local g = neutralGame(101, { "boss", "loyal", "rebel", "spy" })
+    local boss, loy = g.players[1], g.players[2]
+    local ans = AI.answer(g, { kind = "chooseTarget", player = loy,
+        candidates = { boss.id }, hint = "enemy", optional = true })
+    check("boss-team declines an enemy pick when only its own boss is offered", ans == nil,
+        "ans=" .. tostring(ans))
+    -- a rebel in the same spot still (correctly) targets the boss
+    local reb = g.players[3]
+    local ans2 = AI.answer(g, { kind = "chooseTarget", player = reb,
+        candidates = { boss.id }, hint = "enemy", optional = true })
+    check("a rebel still targets the boss", ans2 == boss.id, "ans2=" .. tostring(ans2))
+
+    -- Integration: a loyalist holding 背锅 takes a lethal hit with ONLY the boss alive besides it.
+    -- It must eat the hit rather than transfer the damage onto the boss.
+    local g2 = neutralGame(102, { "boss", "loyal", "rebel", "spy" })
+    g2.players[3].alive = false; g2.players[4].alive = false
+    local b2, l2 = g2.players[1], g2.players[2]
+    l2.hp = 2; l2.hand = { mkCard("背锅") }
+    g2.ask = function(_, req) return AI.answer(g2, req) end   -- route every decision through the real AI
+    g2:dealDamage({ target = l2, source = nil, amount = 2, card = mkCard("加班") })
+    check("loyalist did NOT deflect its lethal hit onto the boss", b2.hp == 5 and not l2.alive,
+        "boss.hp=" .. b2.hp .. " loy.alive=" .. tostring(l2.alive))
+end
+
+print("[43] AI force-dodges a hit that would be LETHAL (incoming amount is threaded in)")
+do
+    -- Unit: at hp2 facing a 2-damage (wine-boosted) hit, the dodge decision must be forced,
+    -- not the old 50% coin flip that gated only on hp<=1.
+    local g = neutralGame(103, { "boss", "rebel", "loyal", "spy" })
+    local t = g.players[2]; t.hp = 2
+    local dodge = mkCard("摸鱼"); t.hand = { dodge }
+    local ans = AI.answer(g, { kind = "chooseCard", player = t, candidates = { dodge.id },
+        hint = "dodge", amount = 2 })
+    check("hp2 vs 2-damage: dodge is forced", ans == dodge.id, "ans=" .. tostring(ans))
+    -- and a 1-damage hit at hp5 is NOT auto-dodged into oblivion (still returns a decision or nil)
+    local g3 = neutralGame(104, { "boss", "rebel", "loyal", "spy" })
+    local t3 = g3.players[2]; t3.hp = 5
+    local d3 = mkCard("摸鱼"); t3.hand = { d3 }
+    local a3 = AI.answer(g3, { kind = "chooseCard", player = t3, candidates = { d3.id },
+        hint = "dodge", amount = 1 })
+    check("hp5 vs 1-damage: dodge not forced (nil or the card, never a crash)",
+        a3 == nil or a3 == d3.id, "a3=" .. tostring(a3))
+
+    -- Integration: a wine-boosted 加班 vs an unarmored hp2 target — the engine threads amount=2
+    -- into tryDodge, so the AI dodges and survives instead of dying to the under-dodge.
+    local g2 = neutralGame(105, { "boss", "rebel", "loyal", "spy" })
+    local atk, def = g2.players[1], g2.players[2]
+    atk.flags.wine = true
+    def.hp = 2; def.hand = { mkCard("摸鱼") }
+    g2.ask = function(_, req) return AI.answer(g2, req) end
+    local landed = g2:performAttack(atk, def, { card = mkCard("加班") })
+    check("wine-boosted lethal 加班 at hp2 is dodged (target survives, dodge spent)",
+        (not landed) and def.hp == 2 and #def.hand == 0,
+        "landed=" .. tostring(landed) .. " def.hp=" .. def.hp .. " hand=" .. #def.hand)
+end
+
+print("[44] 背锅侠 (田便宜) is identity-honest: body-blocks only the boss, only for boss-team")
+do
+    -- A REBEL 田便宜 must NOT throw itself in front of a lethal hit on the (enemy) boss.
+    local g = neutralGame(106, { "boss", "rebel", "loyal", "spy" })
+    local boss = g.players[1]; boss.hp = 1; boss.hand = {}
+    local tian = withChar(g, 17, 2); tian.identity = "rebel"; tian.hand = {}
+    g.players[3].hand = {}; g.players[4].hand = {}
+    g.askYesNo = function(_, _, _, aiYes) if aiYes == nil then aiYes = true end return aiYes end
+    local hp0 = tian.hp
+    g:dealDamage({ target = boss, source = g.players[3], amount = 1, card = mkCard("加班") })
+    check("rebel 田便宜 lets the enemy boss die (no body-block)",
+        not boss.alive and tian.hp == hp0, "boss.alive=" .. tostring(boss.alive) .. " tian.hp=" .. tian.hp)
+
+    -- A LOYAL 田便宜 SHOULD shield the boss (proves the fix didn't over-restrict).
+    local g2 = neutralGame(107, { "boss", "loyal", "rebel", "spy" })
+    local boss2 = g2.players[1]; boss2.hp = 1; boss2.hand = {}
+    local tian2 = withChar(g2, 17, 2); tian2.identity = "loyal"; tian2.hand = {}
+    g2.players[3].hand = {}; g2.players[4].hand = {}
+    g2.askYesNo = function(_, _, _, aiYes) if aiYes == nil then aiYes = true end return aiYes end
+    local hp2before = tian2.hp
+    g2:dealDamage({ target = boss2, source = g2.players[3], amount = 1, card = mkCard("加班") })
+    check("loyal 田便宜 body-blocks to keep the boss alive",
+        boss2.alive and tian2.hp < hp2before, "boss.alive=" .. tostring(boss2.alive) .. " tian.hp=" .. tian2.hp)
 end
 
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))

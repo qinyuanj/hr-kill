@@ -516,10 +516,15 @@ C.list = {
             handLimitMod = function(game, p) return 2 end,
             -- 背锅侠 handled by engine substitution hook: onOthersDamage
             onOthersDamage = function(game, p, ctx)
-                if ctx.target.id == p.id or not p.alive then return false end
-                -- AI: only sacrifice to save an ally that is about to die
-                local aiYes = (p.hp > 1 and ctx.target.hp <= 1)
-                if game:askYesNo(p, string.format("【背锅侠】替 %s 承受伤害并摸2张？", ctx.target.name), aiYes) then
+                local t = ctx.target
+                if t.id == p.id or not p.alive then return false end
+                -- AI: body-blocking is a sacrifice, so an AI only spends itself on a CONFIRMED
+                -- teammate that is about to die. With identities hidden the only player anyone
+                -- can read is the public boss, so a boss-team 田便宜 shields the boss and nobody
+                -- else — the old identity-blind rule would take a lethal hit for an *enemy*.
+                local iAmBossTeam = (p.identity == "boss" or p.identity == "loyal")
+                local aiYes = (p.hp > 1) and (t.hp <= 1) and iAmBossTeam and (t.identity == "boss")
+                if game:askYesNo(p, string.format("【背锅侠】替 %s 承受伤害并摸2张？", t.name), aiYes) then
                     ctx.target = p
                     p.stats.blame = p.stats.blame + 1
                     game:logmsg("%s【背锅侠】替人受过", p.name)

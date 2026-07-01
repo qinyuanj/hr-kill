@@ -82,14 +82,24 @@ local function bestTarget(game, me, candidates, hint)
         return best
     end
     -- enemy / any
+    local boss = game:bossPlayer()
+    -- A boss-aligned member must NEVER pick the public boss as a hostile target — not when
+    -- attacking, and not when a redirect (背锅 / 李接口 这是前端问题) asks it where to shove a hit.
+    -- hostility already scores the boss at -1000, but the old `return best or candidates[1]`
+    -- failed OPEN: with the boss as the sole non-self candidate it would still hand the boss
+    -- back. Drop it up front and fail CLOSED (return nil) so those optional redirects decline
+    -- instead of own-goaling the boss.
+    local dropBoss = (me.identity == "loyal" or me.identity == "boss")
     local best, bestS
     for _, p in ipairs(candidates) do
-        if p.id ~= me.id then
+        if p.id ~= me.id and not (dropBoss and p.id == boss.id) then
             local sc = hostility(game, me, p) + game.rng:float()
             if not bestS or sc > bestS then best, bestS = p, sc end
         end
     end
-    return best or candidates[1]
+    if best then return best end
+    if dropBoss then return nil end   -- only the boss was on offer: decline rather than self-sabotage
+    return candidates[1]
 end
 
 ----------------------------------------------------------------------
@@ -334,10 +344,14 @@ local function decideCard(game, req)
     local hint = req.hint or "discard"
 
     if hint == "dodge" then
-        -- Always dodge a potentially lethal hit; otherwise dodge only sometimes so
-        -- that chip damage actually accumulates and games converge.
-        if player.hp <= 1 then return worstCard(game, player, cand).id end
-        local pDodge = (player.hp <= 2) and 0.5 or 0.25
+        -- Dodge any hit that would be LETHAL; otherwise dodge only sometimes so that chip
+        -- damage accumulates and games converge. `req.amount` is the effective incoming
+        -- damage the engine threads in (卷一下 +1 already folded in, 人体工学椅 -1 discounted),
+        -- so a 2-damage wine hit at hp2 is now correctly recognised as lethal — the old
+        -- `hp <= 1` gate under-dodged it and let the AI die avoidably.
+        local incoming = req.amount or 1
+        if player.hp <= incoming then return worstCard(game, player, cand).id end
+        local pDodge = (player.hp - incoming <= 1) and 0.5 or 0.25
         if game.rng:float() < pDodge then return worstCard(game, player, cand).id end
         return nil
     elseif hint == "selfSave" then

@@ -796,7 +796,15 @@ function Engine:tryDodge(target, ctx)
     if #dodges == 0 then return false end
     local prompt = string.format("%s 对你使用【%s】，打出【摸鱼】抵消？",
         ctx.source and ctx.source.name or "某人", ctx.card and ctx.card.name or "加班")
-    local c = self:askCard(target, dodges, prompt, true, "dodge")
+    -- Thread the EFFECTIVE incoming damage to the decider so an AI force-dodges a lethal hit
+    -- (卷一下 already folded into ctx.amount above). Discount 人体工学椅's per-turn -1 (applied
+    -- later in dealDamage, same guard as there) so we don't waste 摸鱼 on a hit armor absorbs.
+    local incoming = ctx.amount or 1
+    if ctx.card and not ctx.ignoreArmor and target.equip.armor
+        and target.equip.armor.name == "人体工学椅" and not target.armorUsedThisTurn then
+        incoming = incoming - 1
+    end
+    local c = self:askCard(target, dodges, prompt, true, "dodge", { amount = incoming })
     if not c then return false end
     self:removeFromHand(target, c)
     self:toDiscard(c)
@@ -901,7 +909,8 @@ function Engine:attackBudget(player)
     if player.flags.unlimitedAttack then return math.huge end
     local n = 1
     if player.equip.weapon and player.equip.weapon.name == "双屏显示器" then n = n + 1 end
-    if player.flags.extraAttack then n = n + player.flags.extraAttack end
+    -- (no re-gain exploit: attacksUsed is monotonic, so a mid-turn 双屏 upgrade only ever
+    -- grants the weapon's intended +1 for the turn — it can't refund an already-spent attack.)
     return n
 end
 
