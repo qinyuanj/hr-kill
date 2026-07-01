@@ -1022,5 +1022,23 @@ do
         q.stats.dmgTaken > 0, "dmgTaken=" .. q.stats.dmgTaken)
 end
 
+print("[46] mutual-kill still credits the kill stat (罗法援 劳动仲裁 kills its own killer)")
+do
+    -- Attacker (hp2) kills 罗法援; 罗法援's onDying (劳动仲裁) loseHp's the attacker for 2, killing
+    -- it mid-cascade. When 罗法援's killPlayer runs, source.alive is now false — the gameplay
+    -- rewards are correctly skipped (a dead hand was already discarded; drawing would leak cards),
+    -- but the KILL STAT must still be credited (the attacker did land the fatal blow).
+    local g = neutralGame(109, { "rebel", "loyal", "boss", "spy" })
+    local atk = g.players[1]; atk.hp = 2; atk.hand = {}
+    local luo = withChar(g, 24, 2); luo.identity = "loyal"; luo.hp = 1; luo.hand = {}
+    g.players[3].hand = {}; g.players[4].hand = {}
+    g.askYesNo = function(_, _, prompt) return prompt ~= nil and prompt:find("劳动仲裁") ~= nil end
+    local kills0 = atk.stats.kills
+    g:dealDamage({ target = luo, source = atk, amount = 1, card = mkCard("加班") })
+    check("attacker credited with the kill despite dying to 劳动仲裁 in the same cascade",
+        atk.stats.kills == kills0 + 1 and not atk.alive and not luo.alive,
+        "kills=" .. atk.stats.kills .. " atk.alive=" .. tostring(atk.alive) .. " luo.alive=" .. tostring(luo.alive))
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

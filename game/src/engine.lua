@@ -722,22 +722,31 @@ function Engine:killPlayer(target, source)
     -- rewards / punishment. Note: during a death CASCADE the winner is not yet committed
     -- (checkWin is deferred to the outermost enterDying — see enterDying/checkWin), so every
     -- death in the cascade still resolves its economy normally; nothing runs "after" the win.
-    if source and source.alive and source.id ~= target.id then
+    -- Credit the kill stat whenever a DISTINCT source landed the fatal blow — even if that
+    -- source itself DIED in the same cascade (罗法援's 劳动仲裁 can kill its own killer before we
+    -- reach here). stats.kills only feeds the end-game 职场报告 / 优化大师 verdict, never card
+    -- state, so bumping it on a dead source is safe. The GAMEPLAY rewards below MUST stay gated
+    -- on a LIVE source: a dead attacker already had its hand discarded in its own killPlayer, so
+    -- drawing 3 into it would leak cards (break conservation); the boss penalty and spy heal are
+    -- likewise dead no-ops. So split the two — stat always, rewards only while source is alive.
+    if source and source.id ~= target.id then
         source.stats.kills = source.stats.kills + 1
-        if target.identity == "rebel" then
-            self:logmsg("%s 击杀【摸鱼党】，摸 3 张牌", source.name)
-            self:draw(source, 3, "击杀奖励")
-        elseif target.identity == "loyal" and source.identity == "boss" then
-            self:logmsg("老板错杀【嫡系】，弃置全部手牌与装备！")
-            local all = {}
-            for _, c in ipairs(source.hand) do all[#all + 1] = c end
-            self:discardCards(source, all, "错杀嫡系")
-            self:discardAllEquip(source)
-        end
-        -- GDD §8.4: the 反骨仔 (spy) wins only by outlasting everyone and then soloing the
-        -- boss, so it recovers 1 精神值 on any kill — identity-gated, never helps boss/rebel.
-        if source.identity == "spy" and source.hp < source.maxHp then
-            self:heal(source, 1, "反骨仔·赢家通吃")
+        if source.alive then
+            if target.identity == "rebel" then
+                self:logmsg("%s 击杀【摸鱼党】，摸 3 张牌", source.name)
+                self:draw(source, 3, "击杀奖励")
+            elseif target.identity == "loyal" and source.identity == "boss" then
+                self:logmsg("老板错杀【嫡系】，弃置全部手牌与装备！")
+                local all = {}
+                for _, c in ipairs(source.hand) do all[#all + 1] = c end
+                self:discardCards(source, all, "错杀嫡系")
+                self:discardAllEquip(source)
+            end
+            -- GDD §8.4: the 反骨仔 (spy) wins only by outlasting everyone and then soloing the
+            -- boss, so it recovers 1 精神值 on any kill — identity-gated, never helps boss/rebel.
+            if source.identity == "spy" and source.hp < source.maxHp then
+                self:heal(source, 1, "反骨仔·赢家通吃")
+            end
         end
     end
 
