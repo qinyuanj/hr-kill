@@ -72,7 +72,7 @@ lua test/ui_smoke.lua 9000
 ```
 
 - `headless.lua`：1000+ 局（4–8 人）零报错、自然分胜负，且**卡牌守恒不变式全程成立**。
-- `test/test_fixes.lua`：102 项断言，锁定历次评审/查错修复的每个 bug。
+- `test/test_fixes.lua`：106 项断言，锁定历次评审/查错修复的每个 bug。
 - `test/win_invariant.lua`：胜负判定不变式 soak——数千局全 AI 对局中断言「胜方 ⟺ 老板生死」始终自洽
   （老板胜必老板活、反贼/反骨仔胜必老板亡、反骨仔胜必其为唯一幸存者），死亡级联判定回归的兜底。
 - `test/log_scroll.lua`：战报面板按渲染行预算、最新消息不被裁切的回归测试。

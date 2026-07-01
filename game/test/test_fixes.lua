@@ -1004,5 +1004,23 @@ do
         boss2.alive and tian2.hp < hp2before, "boss.alive=" .. tostring(boss2.alive) .. " tian.hp=" .. tian2.hp)
 end
 
+print("[45] loseHp counts toward dmgTaken (职场报告 completeness + no false 全程毫发无伤)")
+do
+    -- loseHp is the non-加班 HP-loss path (试用期考核/样式崩了/与公司共成长/劳动仲裁). It must feed
+    -- the 承受精神打击 stat like dealDamage does, else the report under-counts and a player who
+    -- only ever lost HP this way is falsely tagged "全程毫发无伤".
+    local g = neutralGame(108, { "boss", "rebel", "loyal", "spy" })
+    local p = g.players[2]; p.hp = 5
+    check("baseline dmgTaken is 0", p.stats.dmgTaken == 0, "dmgTaken=" .. p.stats.dmgTaken)
+    g:loseHp(p, 2, "试用期考核")
+    check("loseHp(2) adds 2 to dmgTaken", p.stats.dmgTaken == 2, "dmgTaken=" .. p.stats.dmgTaken)
+    g:dealDamage({ target = p, source = g.players[1], amount = 1, card = mkCard("加班") })
+    check("a real 加班 hit stacks on top", p.stats.dmgTaken == 3, "dmgTaken=" .. p.stats.dmgTaken)
+    local q = g.players[3]; q.hp = 5
+    g:loseHp(q, 1, "劳动仲裁")
+    check("a loseHp-only victim is no longer falsely 'unscathed' (dmgTaken>0)",
+        q.stats.dmgTaken > 0, "dmgTaken=" .. q.stats.dmgTaken)
+end
+
 print(string.format("\n==== test_fixes: %d passed, %d failed ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

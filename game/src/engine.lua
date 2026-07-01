@@ -571,6 +571,10 @@ function Engine:loseHp(player, amount, reason)
     self:logmsg("%s 失去 %d 点精神值%s（%d/%d）", player.name, amount,
         reason and ("（" .. reason .. "）") or "", math.max(player.hp, 0), player.maxHp)
     self:emit({ type = "damage", target = player.id, amount = amount })
+    -- Count HP LOSS toward 承受精神打击 too, mirroring dealDamage. loseHp is the non-加班 loss
+    -- path (试用期考核 / 样式崩了 / 与公司共成长 / 劳动仲裁); without this the 职场报告 total
+    -- under-counts, and a player who only ever lost HP this way is falsely tagged 全程毫发无伤.
+    if amount > 0 then player.stats.dmgTaken = player.stats.dmgTaken + amount end
     if player.hp <= 0 then self:enterDying(player, nil) end
 end
 
