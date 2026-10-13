@@ -6,6 +6,7 @@ Icon?
 
 # LÖVE / build artifacts
 *.love
+/dist/
 shot.png
 
 # editor

@@ -150,12 +150,16 @@ end
 function love.update(dt)
     if not G.game then return end
 
-    if SHOT and not shotDone then
+    if SHOT then
+        shotFrame = shotFrame + 1
+        if shotDone then
+            if G._quitAt and shotFrame >= G._quitAt then love.event.quit() end
+            return
+        end
         -- Fast-forward the whole game in one update: step every decision (the AI even
         -- answers the human seat) until we reach the wanted human request, or the game
         -- ends. This reaches any capture state in a couple of frames regardless of how
         -- long the game runs, so screenshots are quick and reliable.
-        shotFrame = shotFrame + 1
         local want = os.getenv("ZHS_SHOT_KIND")   -- e.g. "playAction" to show the play UI
         local guard = 0
         while want ~= "intro" and G.req ~= nil and guard < 50000 do
@@ -183,7 +187,6 @@ function love.update(dt)
             love.graphics.captureScreenshot("shot.png")
             G._quitAt = shotFrame + 3
         end
-        if G._quitAt and shotFrame >= G._quitAt then love.event.quit() end
         return
     end
 

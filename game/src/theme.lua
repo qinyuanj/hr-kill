@@ -50,7 +50,7 @@ theme.identityGoal = {
 }
 theme.identityColor = function(id) return theme.colors[id] or theme.colors.hidden end
 
--- load CJK-capable fonts from the system (read bytes once, build several sizes)
+-- Prefer the bundled release font, then system fonts (read once, build several sizes).
 function theme.loadFonts()
     local candidates = {
         "/System/Library/Fonts/STHeiti Medium.ttc",
@@ -64,7 +64,12 @@ function theme.loadFonts()
         "C:/Windows/Fonts/simhei.ttf",
     }
     local data
+    if love.filesystem.getInfo and love.filesystem.getInfo("assets/fonts/NotoSansCJKsc-Regular.otf") then
+        local ok, fd = pcall(love.filesystem.newFileData, "assets/fonts/NotoSansCJKsc-Regular.otf")
+        if ok then data = fd end
+    end
     for _, p in ipairs(candidates) do
+        if data then break end
         local f = io.open(p, "rb")
         if f then
             local bytes = f:read("*a"); f:close()

@@ -21,8 +21,25 @@ love .                       # 需要 love 在 PATH 中
 - Linux：`sudo apt install love`
 - Windows：从 https://love2d.org 下载，`love.exe 游戏目录`
 
-> 中文字体在运行时从系统字体自动加载（macOS 用华文黑体 / 苹方 / Arial Unicode，
-> Linux 用 Noto/文泉驿，Windows 用微软雅黑/黑体），无需自带字体文件。
+> 源码运行时从系统字体自动加载（macOS 用华文黑体 / 苹方 / Arial Unicode，
+> Linux 用 Noto/文泉驿，Windows 用微软雅黑/黑体）。Windows 发布包内置 Noto Sans CJK 简体中文字体。
+
+## Windows 单文件 EXE
+
+`dist/HRKill-Windows-x64.exe` 双击即可离线游玩，无需安装 LÖVE、Lua 或其他运行库。
+单文件启动器会把内置运行库展开到临时目录，退出后清理；存档仍保存在 LÖVE 用户目录。
+支持 Windows 10/11 x64，使用系统自带的 Windows PowerShell 展开压缩包。
+
+从项目根目录构建：
+
+```powershell
+# 构建机需安装 MinGW-w64（gcc、windres），并联网下载运行库和字体
+powershell -NoProfile -ExecutionPolicy Bypass -File .\game\build-windows.ps1
+```
+
+构建脚本下载官方 LÖVE 11.4 Windows x64 运行库及 Noto Sans CJK 字体，将游戏融合进运行库，
+再嵌入原生启动器。运行库与字体的许可文件随包保留。玩家只需复制最终 EXE。
+
 
 ## 玩法 / 操作
 
@@ -70,6 +87,7 @@ lua test/sound_test.lua
 
 # UI 代码路径冒烟测试（stub 掉 love，AUTOPLAY 跑满帧）
 lua test/ui_smoke.lua 9000
+lua test/ui_smoke.lua 6 --shot       # 截图一次，并在六帧内自动退出
 ```
 
 - `headless.lua`：1000+ 局（4–8 人）零报错、自然分胜负，且**卡牌守恒 + 精神值边界两条不变式全程成立**。

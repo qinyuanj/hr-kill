@@ -17,6 +17,8 @@ end
 local function newFont() return setmetatable({}, fontMt) end
 
 local W, H = 1280, 800
+local shotMode = arg and arg[2] == "--shot"
+local captures, quits = 0, 0
 _G.love = {
     graphics = {
         getDimensions = function() return W, H end,
@@ -26,13 +28,14 @@ _G.love = {
         rectangle = noop, line = noop, circle = noop, ellipse = noop, print = noop,
         polygon = noop, arc = noop, points = noop,
         printf = noop, setScissor = noop, newFont = newFont,
+        captureScreenshot = function() captures = captures + 1 end,
     },
     filesystem = {
         newFileData = function() return {} end,
     },
     keyboard = { setKeyRepeat = noop },
     mouse = { getPosition = function() return 0, 0 end },
-    event = { quit = noop },
+    event = { quit = function() quits = quits + 1 end },
     timer = { getTime = function() return 0 end },
 }
 -- io.open for fonts: pretend none found so it falls back to newFont()
@@ -49,6 +52,17 @@ dofile("main.lua")
 local love = _G.love
 
 love.load()
+
+if shotMode then
+    for i = 1, 6 do
+        love.update(0.016)
+        love.draw()
+    end
+    assert(captures == 1, "screenshot mode must capture exactly one frame")
+    assert(quits == 1, "screenshot mode must quit after the capture is rendered")
+    print("ui_smoke screenshot: one capture, one quit within six frames")
+    os.exit(0)
+end
 
 local frames = tonumber(arg and arg[1]) or 6000
 local games = 0
